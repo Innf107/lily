@@ -61,6 +61,8 @@ renameExpr env (Pi x xTy e) = do
     pure (Pi x' xTy' e')
 renameExpr _ Type = pure Type
 
+-- | Generates a fresh 'Name' for the given input and updates
+-- the rename environment accordingly
 newVar ::
     (Fresh () Unique :> es) =>
     Text ->
