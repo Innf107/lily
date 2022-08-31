@@ -1,0 +1,123 @@
+name:                lily
+version:             0.1.0.0
+github:              "Innf107/lily"
+license:             BSD3
+author:              "Finn Schneider"
+maintainer:          "mail@prophetlabs.de"
+copyright:           "2022 Finn Schneider"
+
+extra-source-files:
+- README.md
+- CHANGELOG.md
+
+# Metadata used when publishing your package
+# synopsis:            Short description of your package
+# category:            Web
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/Innf107/lily#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- relude
+- effectful
+- text
+- containers
+# Dependency for happy
+- array
+
+ghc-options:
+- -Wall
+- -Wcompat
+- -Widentities
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wmissing-export-lists
+- -Wmissing-home-modules
+- -Wpartial-fields
+- -Wredundant-constraints
+- -Wno-unticked-promoted-constructors
+- -Wno-name-shadowing
+- -Werror=incomplete-patterns
+
+library:
+  source-dirs: src
+
+executables:
+  lily:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - lily
+
+tests:
+  lily-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - lily
+
+default-extensions:
+  - NoImplicitPrelude
+  - StrictData
+  - ApplicativeDo
+  - LambdaCase
+  - OverloadedStrings
+  - DataKinds
+  - TypeFamilies
+  - TypeFamilyDependencies
+  - FlexibleInstances
+  - FlexibleContexts
+  - RankNTypes
+  - MultiParamTypeClasses
+  - PatternSynonyms
+  - StandaloneDeriving
+  - StandaloneKindSignatures
+  - GADTs
+  - ConstraintKinds
+  - ScopedTypeVariables
+  - BlockArguments
+  - TypeOperators
+  - NamedFieldPuns
+  - MultiWayIf
+  - PostfixOperators
+  - KindSignatures
+  - TypeApplications
+  - PolyKinds
+  - ViewPatterns
+  - TupleSections
+  - DisambiguateRecordFields
+  - ImportQualifiedPost
+  - ImplicitParams
+  - NegativeLiterals
+  - DeriveGeneric
+  - DeriveDataTypeable
+  - BangPatterns
+  - DefaultSignatures
+  - DeriveFoldable
+  - DeriveFunctor
+  - DeriveTraversable
+  - DerivingStrategies
+  - EmptyCase
+  - ExistentialQuantification
+  - GeneralizedNewtypeDeriving
+  - InstanceSigs
+  - EmptyDataDeriving
+  - RecordWildCards
+  - FunctionalDependencies
+  - NumericUnderscores
+  - NumDecimals
+  - RoleAnnotations
+  - QuantifiedConstraints
+  - OverloadedLists
+
