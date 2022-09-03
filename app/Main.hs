@@ -10,6 +10,7 @@ import Data.Text qualified as Text
 import Lily.Lexer qualified as Lexer
 import Lily.Parser qualified as Parser
 import Lily.Rename qualified as Rename
+import Lily.Types qualified as Types
 
 data Options = Options {
     verboseNames :: Bool
@@ -50,6 +51,17 @@ main = do
                 Right renamed -> pure renamed
             
             putStrLn ("\nRENAMED: " <> show renamed)
+
+            (coreExpr, ty) <- runEff (runError @Types.TypeError (Types.infer Types.emptyTCEnv renamed)) >>= \case
+                Left err -> putStrLn ("Type error: " <> show err) >> exitFailure
+                Right res -> pure res
+
+            putStrLn ("\nCORE: " <> show coreExpr)
+            putStrLn ("TYPE: " <> show ty)
+
+            let resultValue = Types.eval Types.emptyEvalEnv coreExpr
+
+            putStrLn ("RESULT VALUE: " <> show resultValue)
         [] -> failUsage "Missing required FILE argument"
         _ -> failUsage "Too many arguments"
     where

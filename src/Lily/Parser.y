@@ -4,7 +4,7 @@ module Lily.Parser (parse) where
 
 import Prelude
 
-import Lily.Syntax (Expr(..), Pass(..), Name)
+import Lily.Syntax (SourceExpr(..), Pass(..), Name)
 import Lily.Lexer (Token(..))
 }
 
@@ -28,7 +28,7 @@ import Lily.Lexer (Token(..))
 
 %%
 
-Expr :: { Expr Parsed }
+Expr :: { SourceExpr Parsed }
 Expr : let ident '=' Expr in Expr                       { Let $2 Nothing $4 $6 }
      | let ident ':' Expr '=' Expr in Expr              { Let $2 (Just $4) $6 $8}
      | 'λ' ident '.' Expr                               { Lambda $2 Nothing $4 }
@@ -39,7 +39,7 @@ Expr1 : Expr2 '->' Expr                         { Arrow $1 $3 }
       | '(' ident ':' Expr ')' '->' Expr        { Pi $2 $4 $7 }
       | Expr2                                   { $1 }
 
-Expr2 : Expr2 Expr { App $1 $2 }
+Expr2 : Expr2 Expr3 { App $1 $2 }
       | Expr3      { $1 }
 
 Expr3 : ident           { Var $1 }
