@@ -2,8 +2,8 @@ module Main (main) where
 
 import Lily.Prelude
 
-import Lily.Effect.Fresh
 import Lily.Config qualified as Config
+import Lily.Effect.Fresh
 
 import Data.Text qualified as Text
 
@@ -12,29 +12,34 @@ import Lily.Parser qualified as Parser
 import Lily.Rename qualified as Rename
 import Lily.Types qualified as Types
 
-data Options = Options {
-    verboseNames :: Bool
-}
+import Data.Set qualified as Set
+
+data Options = Options
+    {
+    }
 
 defaultOptions :: Options
-defaultOptions = Options {
-    verboseNames = False
-}
+defaultOptions =
+    Options
+        {
+        }
 
 failUsage :: Text -> IO a
 failUsage message = do
-    putTextLn $ "ERROR: " <> message <> "\n\n" <> unlines [
-            "usage: lily [OPTIONS] <FILE>"
-        ,   ""
-        ,   "Options:"
-        ,   "    --verbose-names        Disambiguate names in debug output by appending a unique number"
-        ]
+    putTextLn $
+        "ERROR: " <> message <> "\n\n"
+            <> unlines
+                [ "usage: lily [OPTIONS] <FILE>"
+                , ""
+                , "Options:"
+                , "    --verbose-names        Disambiguate names in debug output by appending a unique number"
+                , "    --trace <CATEGORY>     Enable traces for CATEGORY. Possible values: " <> intercalate ", " (map show (universe @Config.TraceCategory))
+                ]
     exitFailure
 
 main :: IO ()
 main = do
-    (Options { verboseNames }, args) <- parseArgs =<< getArgs
-    Config.updateConfig (\cfg -> cfg { Config.verboseNames = verboseNames })
+    (Options{}, args) <- parseArgs =<< getArgs
     case args of
         [file] -> do
             content <- readFileText file
@@ -45,16 +50,18 @@ main = do
 
             let parsed = Parser.parse tokens
             putStrLn ("\nPARSED: " <> show parsed)
-            
-            renamed <- runEff (runError @Rename.RenameError (runFreshUnique (Rename.rename parsed))) >>= \case
-                Left err -> putStrLn ("Lexical error: " <> show err) >> exitFailure
-                Right renamed -> pure renamed
-            
+
+            renamed <-
+                runEff (runError @Rename.RenameError (runFreshUnique (Rename.rename parsed))) >>= \case
+                    Left err -> putStrLn ("Lexical error: " <> show err) >> exitFailure
+                    Right renamed -> pure renamed
+
             putStrLn ("\nRENAMED: " <> show renamed)
 
-            (coreExpr, ty) <- runEff (runError @Types.TypeError (Types.infer Types.emptyTCEnv renamed)) >>= \case
-                Left err -> putStrLn ("Type error: " <> show err) >> exitFailure
-                Right res -> pure res
+            (coreExpr, ty) <-
+                runEff (runError @Types.TypeError (Types.infer Types.emptyTCEnv renamed)) >>= \case
+                    Left err -> putStrLn ("Type error: " <> show err) >> exitFailure
+                    Right res -> pure res
 
             putStrLn ("\nCORE: " <> show coreExpr)
             putStrLn ("TYPE: " <> show ty)
@@ -64,14 +71,25 @@ main = do
             putStrLn ("RESULT VALUE: " <> show resultValue)
         [] -> failUsage "Missing required FILE argument"
         _ -> failUsage "Too many arguments"
-    where
-        parseArgs :: [String] -> IO (Options, [String])
-        parseArgs [] = pure (defaultOptions, [])
-        parseArgs ("--verbose-names" : args) = do
+  where
+    parseArgs :: [String] -> IO (Options, [String])
+    parseArgs [] = pure (defaultOptions, [])
+    parseArgs ("--verbose-names" : args) = do
+        Config.updateConfig (\cfg -> cfg{Config.verboseNames = True})
+        parseArgs args
+    parseArgs ["--trace"] = failUsage ("'--trace' expects an argument")
+    parseArgs ("--trace" : category : args) =
+        case readMaybe category of
+            Nothing ->
+                failUsage $
+                    "Invalid trace category '" <> show category <> "'. Possible values: "
+                        <> intercalate ", " (map show (universe @Config.TraceCategory))
+            Just cat -> do
+                Config.updateConfig
+                    (\cfg@Config.Config{enabledTraces} -> cfg{Config.enabledTraces = Set.insert cat enabledTraces})
+                parseArgs args
+    parseArgs (arg : args)
+        | "-" `Text.isPrefixOf` toText arg = failUsage ("Invalid flag '" <> toText arg <> "'")
+        | otherwise = do
             (opts, args) <- parseArgs args
-            pure (opts { verboseNames = True }, args)
-        parseArgs (arg : args)
-            | "-" `Text.isPrefixOf` toText arg = failUsage ("Invalid flag '" <> toText arg <> "'")
-            | otherwise = do
-                (opts, args) <- parseArgs args
-                pure (opts, arg : args)
+            pure (opts, arg : args)

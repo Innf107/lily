@@ -1,3 +1,5 @@
+{-# LANGUAGE UndecidableInstances #-}
+
 module Lily.Syntax (
     SourceExpr (..),
     CoreExpr (..),
@@ -101,9 +103,6 @@ data SourceExpr (p :: Pass)
     | Pi (XName p) (SourceExpr p) (SourceExpr p) -- (x : e₁) -> e₂
     | Type -- Type
 
-deriving instance Show (SourceExpr Parsed)
-deriving instance Show (SourceExpr Renamed)
-
 data CoreExpr
     = CVar Ix
     | CLet Name CoreExpr CoreExpr CoreExpr
@@ -133,3 +132,47 @@ data EvalEnv = EvalEnv
     deriving (Show)
 
 data Closure = Closure EvalEnv ~CoreExpr deriving (Show)
+
+-- precedences
+atomPrec, appPrec, piPrec, letPrec :: Int
+atomPrec = 3
+appPrec = 2
+piPrec = 1
+letPrec = 0
+
+par :: Int -> Int -> S.ShowS -> S.ShowS
+par p p' = S.showParen (p' < p)
+
+class PrettyName a where
+    prettyS :: a -> S.ShowS
+
+instance PrettyName Name where
+    prettyS = S.shows
+instance PrettyName Text where
+    prettyS x = (toString x <>)
+instance PrettyName Ix where
+    prettyS = S.shows
+
+instance (PrettyName (XVar p), PrettyName (XName p)) => S.Show (SourceExpr p) where
+    showsPrec _ (Var x) = prettyS x
+    showsPrec p (Let x Nothing body rest) =
+        par p letPrec $ ("let " <>) . prettyS x . (" = "<>) . S.showsPrec appPrec body <> ("in\n"<>) 
+            . S.showsPrec letPrec rest
+    showsPrec p (Let x (Just ty) body rest) =
+        par p letPrec $ ("let " <>) . prettyS x . (" : "<>) . S.showsPrec piPrec ty
+                            . ("\n    = " <>) . S.showsPrec letPrec body 
+                            . ("\nin\n" <>)
+                            . S.showsPrec letPrec rest
+    showsPrec p (App e1 e2) =
+        par p appPrec $ S.showsPrec appPrec e1 . (" "<>) . S.showsPrec atomPrec e2
+    showsPrec p (Lambda x Nothing body) =
+        par p letPrec $ ("λ"<>) . prettyS x . (". "<>) . S.showsPrec letPrec body
+    showsPrec p (Lambda x (Just ty) body) =
+        par p letPrec $ ("λ("<>) . prettyS x . (" : "<>) . S.showsPrec appPrec ty . ("). " <>) . S.showsPrec letPrec body
+    showsPrec _ Hole = ("_"<>)
+    showsPrec _ (NamedHole name) = ("?"<>) . prettyS name
+    showsPrec p (Arrow e1 e2) = par p piPrec $ S.showsPrec appPrec e1 . (" -> "<>) . S.showsPrec piPrec e2
+    showsPrec p (Pi x dom cod) = 
+        par p piPrec $ ("("<>) . prettyS x  . (" : " <>) . S.showsPrec appPrec dom . (") -> "<>) 
+            . S.showsPrec letPrec cod
+    showsPrec _ Type = ("Type"<>)

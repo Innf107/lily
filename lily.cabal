@@ -33,7 +33,6 @@ library
       Lily.Rename
       Lily.Syntax
       Lily.Types
-      Lily.Util.NoShadow
   other-modules:
       Paths_lily
   hs-source-dirs:

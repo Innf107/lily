@@ -1,4 +1,7 @@
-let id : (a : Type) -> a -> a = 
-    λa. λx. x 
-in 
-id Type Type
+let ℕ : Type = (a : Type) -> (a -> a) -> a -> a in
+
+let n0 : (a : Type) -> (a -> a) -> a -> a =
+    λa. λs. λz. z
+in
+
+Type

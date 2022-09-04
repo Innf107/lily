@@ -11,6 +11,8 @@ module Lily.Types (
 import Lily.Prelude
 import Lily.Syntax
 
+import Lily.Config
+
 data TypeError
     = ConversionError Value Value Value Value
     | --              ^     ^     ^     ^ full actual
@@ -48,7 +50,12 @@ emptyEvalEnv =
         }
 
 insertType :: Value -> TCEnv -> TCEnv
-insertType ty env@TCEnv{varTypes} = env{varTypes = ty : varTypes}
+insertType ty env@TCEnv{varTypes, evalEnv, currentLevel} =
+    env
+        { varTypes = ty : varTypes
+        , evalEnv = insertValue ty evalEnv
+        , currentLevel = incLevel currentLevel
+        }
 
 lookupType :: HasCallStack => TCEnv -> Ix -> Value
 lookupType TCEnv{varTypes} Ix{index, ixName} = go varTypes index
@@ -73,6 +80,7 @@ check ::
     SourceExpr Renamed ->
     Value ->
     Eff es CoreExpr
+check _ ty expr | False <- trace TC ("[check]: (" <> show expr <> ") : " <> show ty) True = error "unreachable"
 -- We can ignore the name in the Π type, since we only include it for diagnostics anyway.
 -- The variable is represented by its DeBrujin index.
 check env (Lambda x Nothing body) (VPi _ dom closure) = do
@@ -91,9 +99,9 @@ check env (Let x mty body rest) ty = do
             pure (quote (currentLevel env) bodyTy, body', bodyTy)
         Just tySourceExpr -> do
             tyCoreExpr <- check env tySourceExpr VType -- Type annotations have to be, well... types! (We also need to do this to get a CoreExpr for tySourceExpr)
-            let ty = eval (evalEnv env) tyCoreExpr
-            body' <- check env body ty
-            pure (tyCoreExpr, body', ty)
+            let bodyTy = eval (evalEnv env) tyCoreExpr
+            body' <- check env body bodyTy
+            pure (tyCoreExpr, body', bodyTy)
     rest' <- check (insertType bodyTy env) rest ty
     pure (CLet x ty' body' rest')
 check env expr expectedTy = do
@@ -106,62 +114,64 @@ infer ::
     TCEnv ->
     SourceExpr Renamed ->
     Eff es (CoreExpr, Value)
-infer env expr = case expr of
-    Var x -> pure (CVar x, lookupType env x)
-    Let x mty body rest -> do
-        (ty', body', bodyTy) <- case mty of
-            Nothing -> do
-                (body', bodyTy) <- infer env body
-                -- For unannotated lambdas, we insert an annotation by quoting
-                -- the inferred type. This might be unnecessary and it might be
-                -- more intelligent to drop the type annotation for core entirely?
-                -- Or maybe we should keep the Maybe?
-                -- I'm not sure.
-                pure (quote (currentLevel env) bodyTy, body', bodyTy)
-            Just tySourceExpr -> do
-                tyCoreExpr <- check env tySourceExpr VType -- Type annotations have to be, well... types! (We also need to do this to get a CoreExpr for tySourceExpr)
-                let ty = eval (evalEnv env) tyCoreExpr
-                body' <- check env body ty
-                pure (tyCoreExpr, body', ty)
-        (rest', restTy) <- infer (insertType bodyTy env) rest
-        pure (CLet x ty' body' rest', restTy)
-    e@(App fun arg) -> do
-        (fun', funTy) <- infer env fun
-        case funTy of
-            VPi _ dom clos -> do
-                arg' <- check env arg dom
-                pure (CApp fun' arg', applyClosure clos (eval (evalEnv env) arg'))
-            _ -> throwError (NonFunctionApplication funTy e)
-    Lambda x (Just tySourceExpr) body -> do
-        tyCoreExpr <- check env tySourceExpr VType -- Same reasoning as type annotations in 'let' above
-        let ty = eval (evalEnv env) tyCoreExpr
-        let env' = insertType ty env
-        (body', bodyTy) <- infer env' body
+infer env expr = do
+    traceM TC ("[infer]: " <> show expr)
+    case expr of
+        Var x -> pure (CVar x, lookupType env x)
+        Let x mty body rest -> do
+            (ty', body', bodyTy) <- case mty of
+                Nothing -> do
+                    (body', bodyTy) <- infer env body
+                    -- For unannotated lambdas, we insert an annotation by quoting
+                    -- the inferred type. This might be unnecessary and it might be
+                    -- more intelligent to drop the type annotation for core entirely?
+                    -- Or maybe we should keep the Maybe?
+                    -- I'm not sure.
+                    pure (quote (currentLevel env) bodyTy, body', bodyTy)
+                Just tySourceExpr -> do
+                    tyCoreExpr <- check env tySourceExpr VType -- Type annotations have to be, well... types! (We also need to do this to get a CoreExpr for tySourceExpr)
+                    let ty = eval (evalEnv env) tyCoreExpr
+                    body' <- check env body ty
+                    pure (tyCoreExpr, body', ty)
+            (rest', restTy) <- infer (insertType bodyTy env) rest
+            pure (CLet x ty' body' rest', restTy)
+        e@(App fun arg) -> do
+            (fun', funTy) <- infer env fun
+            case funTy of
+                VPi _ dom clos -> do
+                    arg' <- check env arg dom
+                    pure (CApp fun' arg', applyClosure clos (eval (evalEnv env) arg'))
+                _ -> throwError (NonFunctionApplication funTy e)
+        Lambda x (Just tySourceExpr) body -> do
+            tyCoreExpr <- check env tySourceExpr VType -- Same reasoning as type annotations in 'let' above
+            let ty = eval (evalEnv env) tyCoreExpr
+            let env' = insertType ty env
+            (body', bodyTy) <- infer env' body
 
-        -- TODO: I *think* the closure should include the unmodified `env`,
-        -- since the type of `x` is given by the Π type, but I'm not entirely sure.
-        -- Also, I think `bodyTy` should be quoted in env', since it includes `x`?
-        let resultTy = VPi (Just x) ty (Closure (evalEnv env) (quote (currentLevel env') bodyTy))
+            -- TODO: I *think* the closure should include the unmodified `env`,
+            -- since the type of `x` is given by the Π type, but I'm not entirely sure.
+            -- Also, I think `bodyTy` should be quoted in env', since it includes `x`?
+            let resultTy = VPi (Just x) ty (Closure (evalEnv env) (quote (currentLevel env') bodyTy))
 
-        pure (CLambda x (Just tyCoreExpr) body', resultTy)
-    -- We cannot infer @x@ without unification variables or something similar.
-    -- Maybe we could use meta variables here somehow? Who knows.
-    Lambda x Nothing _ -> throwError (AmbiguousLambdaArgument x)
-    Hole -> undefined
-    NamedHole xn -> undefined
-    Arrow dom cod -> do
-        dom' <- check env dom VType
-        cod' <- check env cod VType
-        -- Arrows are elaborated into Π types.
-        -- Arrows are really just a convenience to avoid naming the
-        -- variable in a non-dependent Π type, so this should not pose any issues.
-        pure (CPi Nothing dom' cod', VType)
-    Pi x dom cod -> do
-        dom' <- check env dom VType
-        cod' <- check (insertType (eval (evalEnv env) dom') env) cod VType
-        pure (CPi (Just x) dom' cod', VType)
-    -- Yes, TypeInType. Fight me
-    Type -> pure (CType, VType)
+            pure (CLambda x (Just tyCoreExpr) body', resultTy)
+        -- We cannot infer @x@ without unification variables or something similar.
+        -- Maybe we could use meta variables here somehow? Who knows.
+        Lambda x Nothing _ -> throwError (AmbiguousLambdaArgument x)
+        Hole -> undefined
+        NamedHole xn -> undefined
+        Arrow dom cod -> do
+            dom' <- check env dom VType
+            cod' <- check env cod VType
+            -- Arrows are elaborated into Π types.
+            -- Arrows are really just a convenience to avoid naming the
+            -- variable in a non-dependent Π type, so this should not pose any issues.
+            pure (CPi Nothing dom' cod', VType)
+        Pi x dom cod -> do
+            dom' <- check env dom VType
+            cod' <- check (insertType (eval (evalEnv env) dom') env) cod VType
+            pure (CPi (Just x) dom' cod', VType)
+        -- Yes, TypeInType. Fight me
+        Type -> pure (CType, VType)
 
 conversionCheck :: Error TypeError :> es => Lvl -> Value -> Value -> Eff es ()
 conversionCheck level expected inferred = case (expected, inferred) of
@@ -197,20 +207,20 @@ conversionCheck level expected inferred = case (expected, inferred) of
         conversionCheck level arg1 arg2
     (ty1, ty2) -> throwError (ConversionError ty1 ty2 expected inferred)
 
-eval :: EvalEnv -> CoreExpr -> Value
+eval :: HasCallStack => EvalEnv -> CoreExpr -> Value
 eval env (CVar ix) = lookupValue env ix
 eval env (CLet x _ body rest) =
     eval (insertValue (eval env body) env) rest
 eval env (CApp e1 e2) = case (eval env e1, eval env e2) of
     (VLambda _ clos, v2) -> applyClosure clos v2
     (v1, v2) -> VApp v1 v2
--- Evaluating a lambda drops its type signature. 
+-- Evaluating a lambda drops its type signature.
 -- TODO: We could probably already drop the signature
 -- during evaluation. I don't think we need it in Core.
 eval env (CLambda x _ body) =
     VLambda x (Closure env body)
 eval _env CHole = undefined -- I think this should error? Eval can't be lazy unless its pure though so... not sure what to do here for now.
-eval _env CNamedHole{} = undefined 
+eval _env CNamedHole{} = undefined
 eval env (CPi name dom cod) =
     VPi name (eval env dom) (Closure env cod)
 eval _ CType = VType
