@@ -35,8 +35,8 @@ Expr : let ident '=' Expr in Expr                       { Let $2 Nothing $4 $6 }
      | 'λ' '(' ident ':' Expr ')' '.' Expr              { Lambda $3 (Just $5) $8 } 
      | Expr1                                            { $1 }
 
-Expr1 : Expr2 '->' Expr                         { Arrow $1 $3 }
-      | '(' ident ':' Expr ')' '->' Expr        { Pi $2 $4 $7 }
+Expr1 : Expr2 '->' Expr                         { Pi Nothing $1 $3 }
+      | '(' ident ':' Expr ')' '->' Expr        { Pi (Just $2) $4 $7 }
       | Expr2                                   { $1 }
 
 Expr2 : Expr2 Expr3 { App $1 $2 }

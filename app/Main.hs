@@ -37,13 +37,16 @@ failUsage message = do
                 ]
     exitFailure
 
+prettyTypeError :: Types.TypeError -> Text
+prettyTypeError x = show x
+
 main :: IO ()
 main = do
     (Options{}, args) <- parseArgs =<< getArgs
     case args of
         [file] -> do
             content <- readFileText file
-            tokens <- case runPureEff (runError @Lexer.LexError (Lexer.lex content)) of
+            tokens <- case runPureEff (runErrorNoCallStack @Lexer.LexError (Lexer.lex content)) of
                 Left err -> putStrLn ("Lexical error: " <> show err) >> exitFailure
                 Right tokens -> pure tokens
             putStrLn ("TOKENS: " <> show tokens)
@@ -52,15 +55,15 @@ main = do
             putStrLn ("\nPARSED: " <> show parsed)
 
             renamed <-
-                runEff (runError @Rename.RenameError (runFreshUnique (Rename.rename parsed))) >>= \case
-                    Left err -> putStrLn ("Lexical error: " <> show err) >> exitFailure
+                runEff (runErrorNoCallStack @Rename.RenameError (runFreshUnique (Rename.rename parsed))) >>= \case
+                    Left err -> putStrLn ("Name resolution error: " <> show err) >> exitFailure
                     Right renamed -> pure renamed
 
             putStrLn ("\nRENAMED: " <> show renamed)
 
             (coreExpr, ty) <-
-                runEff (runError @Types.TypeError (Types.infer Types.emptyTCEnv renamed)) >>= \case
-                    Left err -> putStrLn ("Type error: " <> show err) >> exitFailure
+                runEff (runErrorNoCallStack @Types.TypeError (Types.infer Types.emptyTCEnv renamed)) >>= \case
+                    Left err -> putTextLn (prettyTypeError err) >> exitFailure
                     Right res -> pure res
 
             putStrLn ("\nCORE: " <> show coreExpr)

@@ -1,7 +1,6 @@
-let ℕ : Type = (a : Type) -> (a -> a) -> a -> a in
 
-let n0 : (a : Type) -> (a -> a) -> a -> a =
-    λa. λs. λz. z
+let ℕ : (a : Type) -> a -> (a -> a) -> a =
+    _
 in
-
 Type
+

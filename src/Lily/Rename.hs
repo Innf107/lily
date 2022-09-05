@@ -9,7 +9,7 @@
 module Lily.Rename (rename, RenameError) where
 
 import Lily.Effect.Fresh
-import Lily.Prelude
+import Lily.Prelude hiding (size)
 import Lily.Syntax
 
 data RenameError = UnboundVar Text deriving (Show)
@@ -19,10 +19,13 @@ data RenameError = UnboundVar Text deriving (Show)
 -- minus the level of `x`
 data RenameEnv = RenameEnv
     { varLevels :: Map Text Lvl
+    -- We need to store the size separately, since `Map` discards duplicates, but we have to pretend
+    -- it doesn't to calculate DeBrujin indices.
+    , size :: Int 
     }
 
 emptyRenameEnv :: RenameEnv
-emptyRenameEnv = RenameEnv{varLevels = mempty}
+emptyRenameEnv = RenameEnv{varLevels = mempty, size = 0}
 
 rename ::
     (Fresh () Unique :> es, Error RenameError :> es) =>
@@ -37,13 +40,13 @@ renameExpr ::
     Eff es (SourceExpr Renamed)
 renameExpr env (Var name) = case lookup name (varLevels env) of
     Nothing -> throwError (UnboundVar name)
-    Just Lvl{ level, lvlName } -> do
+    Just Lvl{level, lvlName} -> do
         lvlName' <- case lvlName of
             Nothing -> error "No level name in renamer" -- TODO: This really shouldn't have to be partial
             Just name -> pure name
         let debrujin =
                 Ix
-                    { index = size (varLevels env) - level
+                    { index = size env - level
                     , ixName = lvlName'
                     }
         pure (Var debrujin)
@@ -70,10 +73,11 @@ renameExpr _ Hole = pure Hole
 renameExpr env (NamedHole name) = do
     (name', _) <- newVar name env
     pure (NamedHole name')
-renameExpr env (Arrow e1 e2) =
-    Arrow <$> renameExpr env e1 <*> renameExpr env e2
-renameExpr env (Pi x xTy e) = do
-    (x', envWithX) <- newVar x env
+renameExpr env (Pi mname xTy e) = do
+    (x', envWithX) <- case mname of
+        Just x -> first Just <$> newVar x env
+        Nothing -> first (const Nothing) <$> newVar "internalNameYouShouldReallyNeverEverSeeThis" env
+
     -- Again, the type of @x@ cannot mention @x@.
     xTy' <- renameExpr env xTy
     -- But the body of the Π type can.
@@ -89,9 +93,9 @@ newVar ::
     Text ->
     RenameEnv ->
     Eff es (Name, RenameEnv)
-newVar x env@RenameEnv{varLevels} = do
+newVar x env@RenameEnv{varLevels, size} = do
     u <- fresh ()
     let name = UnsafeMkName x u
-    let level = size varLevels + 1
-    let env' = env{varLevels = insert x Lvl { lvlName = Just name, level } varLevels}
+    let level = size + 1
+    let env' = env{varLevels = insert x Lvl{lvlName = Just name, level} varLevels, size = size + 1}
     pure (name, env')

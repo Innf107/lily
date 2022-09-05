@@ -62,4 +62,4 @@ traceM cat message = do
         then Debug.Trace.traceM (toString message)
         else pure ()
 
-data TraceCategory = TC deriving (Show, Eq, Ord, Read, Enum, Bounded)
+data TraceCategory = TC | Eval deriving (Show, Eq, Ord, Read, Enum, Bounded)

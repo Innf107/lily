@@ -65,7 +65,7 @@ data Lvl = Lvl
     }
 
 incLevel :: Lvl -> Lvl
-incLevel lvl@Lvl{level} = lvl{level = level + 1}
+incLevel Lvl{level} = Lvl{level = level + 1, lvlName = Nothing}
 
 instance Eq Ix where
     (Ix i _) == (Ix j _) = i == j
@@ -99,8 +99,7 @@ data SourceExpr (p :: Pass)
     | Lambda (XName p) (Maybe (SourceExpr p)) (SourceExpr p) -- λx. e₂ | λ(x : e₁). e₂
     | Hole -- _
     | NamedHole (XName p) -- ?x
-    | Arrow (SourceExpr p) (SourceExpr p) -- e₁ -> e₂
-    | Pi (XName p) (SourceExpr p) (SourceExpr p) -- (x : e₁) -> e₂
+    | Pi (Maybe (XName p)) (SourceExpr p) (SourceExpr p) -- (x : e₁) -> e₂
     | Type -- Type
 
 data CoreExpr
@@ -112,7 +111,6 @@ data CoreExpr
     | CNamedHole Name
     | CPi (Maybe Name) CoreExpr CoreExpr
     | CType
-    deriving (Show)
 
 -- | Values are results of evaluation and are used in type checking via Normalization by Evalutation (NBE)
 data Value
@@ -121,7 +119,6 @@ data Value
     | VLambda Name Closure
     | VPi (Maybe Name) ~Value Closure
     | VType
-    deriving (Show)
 
 -- Defined here for now, since we need the environment to define closures
 -- and we need closures to define values.
@@ -156,23 +153,71 @@ instance PrettyName Ix where
 instance (PrettyName (XVar p), PrettyName (XName p)) => S.Show (SourceExpr p) where
     showsPrec _ (Var x) = prettyS x
     showsPrec p (Let x Nothing body rest) =
-        par p letPrec $ ("let " <>) . prettyS x . (" = "<>) . S.showsPrec appPrec body <> ("in\n"<>) 
-            . S.showsPrec letPrec rest
+        par p letPrec $
+            ("let " <>) . prettyS x . (" = " <>) . S.showsPrec appPrec body
+                <> ("in\n" <>)
+                    . S.showsPrec letPrec rest
     showsPrec p (Let x (Just ty) body rest) =
-        par p letPrec $ ("let " <>) . prettyS x . (" : "<>) . S.showsPrec piPrec ty
-                            . ("\n    = " <>) . S.showsPrec letPrec body 
-                            . ("\nin\n" <>)
-                            . S.showsPrec letPrec rest
+        par p letPrec $
+            ("let " <>) . prettyS x . (" : " <>) . S.showsPrec piPrec ty
+                . ("\n    = " <>)
+                . S.showsPrec letPrec body
+                . ("\nin\n" <>)
+                . S.showsPrec letPrec rest
     showsPrec p (App e1 e2) =
-        par p appPrec $ S.showsPrec appPrec e1 . (" "<>) . S.showsPrec atomPrec e2
+        par p appPrec $ S.showsPrec appPrec e1 . (" " <>) . S.showsPrec atomPrec e2
     showsPrec p (Lambda x Nothing body) =
-        par p letPrec $ ("λ"<>) . prettyS x . (". "<>) . S.showsPrec letPrec body
+        par p letPrec $ ("λ" <>) . prettyS x . (". " <>) . S.showsPrec letPrec body
     showsPrec p (Lambda x (Just ty) body) =
-        par p letPrec $ ("λ("<>) . prettyS x . (" : "<>) . S.showsPrec appPrec ty . ("). " <>) . S.showsPrec letPrec body
-    showsPrec _ Hole = ("_"<>)
-    showsPrec _ (NamedHole name) = ("?"<>) . prettyS name
-    showsPrec p (Arrow e1 e2) = par p piPrec $ S.showsPrec appPrec e1 . (" -> "<>) . S.showsPrec piPrec e2
-    showsPrec p (Pi x dom cod) = 
-        par p piPrec $ ("("<>) . prettyS x  . (" : " <>) . S.showsPrec appPrec dom . (") -> "<>) 
-            . S.showsPrec letPrec cod
-    showsPrec _ Type = ("Type"<>)
+        par p letPrec $ ("λ(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec ty . ("). " <>) . S.showsPrec letPrec body
+    showsPrec _ Hole = ("_" <>)
+    showsPrec _ (NamedHole name) = ("?" <>) . prettyS name
+    showsPrec p (Pi Nothing e1 e2) = par p piPrec $ S.showsPrec appPrec e1 . (" -> " <>) . S.showsPrec piPrec e2
+    showsPrec p (Pi (Just x) dom cod) =
+        par p piPrec $
+            ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . (") -> " <>)
+                . S.showsPrec letPrec cod
+    showsPrec _ Type = ("Type" <>)
+
+instance Show CoreExpr where
+    showsPrec _ (CVar x) = S.shows x
+    showsPrec p (CLet x ty body rest) =
+        par p letPrec $
+            ("let " <>) . prettyS x . (" : " <>) . S.showsPrec piPrec ty
+                . ("\n    = " <>)
+                . S.showsPrec letPrec body
+                . ("\nin\n" <>)
+                . S.showsPrec letPrec rest
+    showsPrec p (CApp e1 e2) =
+        par p appPrec $ S.showsPrec appPrec e1 . (" " <>) . S.showsPrec atomPrec e2
+    showsPrec p (CLambda x Nothing body) =
+        par p letPrec $ ("λ" <>) . prettyS x . (". " <>) . S.showsPrec letPrec body
+    showsPrec p (CLambda x (Just ty) body) =
+        par p letPrec $ ("λ(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec ty . ("). " <>) . S.showsPrec letPrec body
+    showsPrec _ CHole = ("_" <>)
+    showsPrec _ (CNamedHole name) = ("?" <>) . prettyS name
+    showsPrec p (CPi (Just x) dom cod) =
+        par p piPrec $
+            ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . (") -> " <>)
+                . S.showsPrec letPrec cod
+    showsPrec p (CPi Nothing dom cod) =
+        par p piPrec $ S.showsPrec appPrec dom . (" -> " <>) . S.showsPrec piPrec cod
+    showsPrec _ CType = ("Type" <>)
+
+instance Show Value where
+    showsPrec _ (VVar lvl) = S.shows lvl
+    showsPrec p (VApp v1 v2) =
+        par p appPrec $ S.showsPrec appPrec v1 . (" " <>) . S.showsPrec atomPrec v2
+    showsPrec p (VLambda x (Closure env rest)) =
+        par p letPrec $
+            ("λ" <>) . S.shows x . ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("]. " <>)
+                . S.showsPrec letPrec rest
+    showsPrec p (VPi (Just x) dom (Closure env rest)) =
+        par p piPrec $
+            ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . (")[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+                . S.showsPrec letPrec rest
+    showsPrec p (VPi Nothing dom (Closure env rest)) =
+        par p piPrec $
+            S.showsPrec appPrec dom . ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+                . S.showsPrec piPrec rest
+    showsPrec _ (VType) = ("Type"<>)
