@@ -24,6 +24,9 @@ data Token
 
 data LexState = Default | InIdent [Char] | InLineComment
 
+reserved :: Map Text Token
+reserved = [("let", LET), ("in", IN), ("Type", TYPE)]
+
 lex :: Error LexError :> es => Text -> Eff es [Token]
 lex = go Default
   where
@@ -31,8 +34,6 @@ lex = go Default
         Nothing -> pure []
         Just (c, rest) -> case c of
             'λ' -> (LAMBDA :) <$> go Default rest
-            'l' | Just newRest <- Text.stripPrefix "et" rest -> (LET :) <$> go Default newRest
-            'i' | Just newRest <- Text.stripPrefix "n" rest -> (IN :) <$> go Default newRest
             '?' -> (QUESTIONMARK :) <$> go Default rest
             '=' -> (EQUALS :) <$> go Default rest
             '.' -> (DOT :) <$> go Default rest
@@ -42,15 +43,20 @@ lex = go Default
             '-' | Just newRest <- Text.stripPrefix "-" rest -> go InLineComment newRest
             '_' -> (UNDERSCORE :) <$> go Default rest
             ':' -> (COLON :) <$> go Default rest
-            'T' | Just newRest <- Text.stripPrefix "ype" rest -> (TYPE :) <$> go Default newRest
             _ | Char.isAlpha c -> go (InIdent (one c)) rest
             _ | Char.isSpace c -> go Default rest
             _ -> throwError (InvalidChar c)
     go (InIdent ident) input = case Text.uncons input of
-        Nothing -> pure [IDENT (toText (reverse ident))]
+        Nothing -> pure [buildIdent ident]
         Just (c, rest) -> case c of
             _ | Char.isAlphaNum c || c `elem` ("_-'" :: String) -> go (InIdent (c : ident)) rest
-            _ -> (IDENT (toText (reverse ident)) :) <$> go Default input
+            _ -> (buildIdent ident :) <$> go Default input
+        where
+            buildIdent str = 
+                let ident = toText (reverse str) in
+                    case lookup ident reserved of
+                        Nothing -> IDENT ident
+                        Just x -> x
     go InLineComment input = case Text.uncons input of
         Nothing -> pure []
         Just (c, rest) -> case c of

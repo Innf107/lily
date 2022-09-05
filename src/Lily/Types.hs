@@ -92,10 +92,10 @@ check ::
     Eff es CoreExpr
 check _ expr ty | False <- trace TC ("[check]: (" <> show expr <> ") : " <> show ty) True = error "unreachable"
 -- We can ignore the name in the Π type, since we only include it for diagnostics anyway.
--- The variable is represented by its DeBrujin index.
+-- The variable is represented by its DeBruijn index.
 check env (Lambda x Nothing body) (VPi _ dom closure) = do
     CLambda x Nothing
-        -- We again don't need to insert the name, since Core already uses DeBrujin indices
+        -- We again don't need to insert the name, since Core already uses DeBruijn indices
         <$> check (addParamDefinition (Just x) dom env) body (applyClosure closure (VVar ((currentLevel env){lvlName = Just x})))
 check env (Let x mty body rest) ty = do
     (ty', body', bodyTy) <- inferLet env mty body
@@ -205,7 +205,7 @@ conversionCheck level expected inferred = case (expected, inferred) of
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = Just x})))
             (VApp value (VVar level))
-    -- Thanks to DeBrujin indices, we don't need to deal with
+    -- Thanks to DeBruijn indices, we don't need to deal with
     -- α-conversion or anything annyoing like that here
     (VVar lvl1, VVar lvl2) | lvl1 == lvl2 -> pure ()
     (VApp fun1 arg1, VApp fun2 arg2) -> do
@@ -218,7 +218,7 @@ eval _ expr | False <- trace Config.Eval ("[eval]: " <> show expr) True = error 
 eval env (CVar ix) =
     let result = lookupValue env ix
      in trace Config.Eval ("[eval var]: " <> show ix <> " ==> " <> show result) result
-eval env (CLet x _ body rest) =
+eval env (CLet _ _ body rest) =
     eval (insertValue (eval env body) env) rest
 eval env (CApp e1 e2) = case (eval env e1, eval env e2) of
     (VLambda _ clos, v2) -> applyClosure clos v2
@@ -238,4 +238,4 @@ applyClosure :: Closure -> Value -> Value
 applyClosure (Closure env expr) val = eval (insertValue val env) expr
 
 quote :: Lvl -> Value -> CoreExpr
-quote = undefined
+quote currentLevel  = undefined

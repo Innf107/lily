@@ -45,4 +45,22 @@ let abs0PlusL : (n : ℕ) -> Eq ℕ (add Z n) n =
     λn. Refl ℕ n
 in
 
+-- let indℕ : (P : ℕ -> Type) -> P Z -> ((n : ℕ) -> P n -> P (S n)) -> (m : ℕ) -> P m = 
+--     λp. λpZ. λpInd. λm. _ 
+-- in
+
+-- This needs induction over naturals. No idea how to do that with church naturals.
+-- Guess I'll have to add inductive types now, don't I?
+-- let abs0PlusR : (n : ℕ) -> Eq ℕ (add n Z) n =
+--     λn. n 
+--         _ 
+--         _ 
+-- in
+
+let Either : Type -> Type -> Type = 
+    λa. λb. (c : Type) -> (a -> c) -> (b -> c) -> c
+in
+
+let injl : Either Type Type = Type in
+
 Type

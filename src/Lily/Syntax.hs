@@ -40,7 +40,7 @@ instance S.Show Name where
             then toString (x <> "#" <> show (hashUnique u))
             else toString x
 
-{- | DeBrujin indices
+{- | DeBruijn indices
 
  These are used to represent nameless variables, by the distance to the binder that defines them.
  Concretely, this means that a named term like `λa. a` would be represented as `λ $0`
@@ -53,9 +53,9 @@ data Ix = Ix
     , ixName :: Name
     }
 
-{- | DeBrujin levels
+{- | DeBruijn levels
 
- Just like DeBrujin *indices*, DeBrujin *levels* are a nameless representation for variables.
+ Just like DeBruijn *indices*, DeBruijn *levels* are a nameless representation for variables.
  Unlike indices, these are determined by the distance between the associated binder and the beginning of the expression.
  This means that @λa. a@ would still be @λ $0@ with levels, but @λx. λy. x + y@ would be @λλ $1 + $0@
 -}

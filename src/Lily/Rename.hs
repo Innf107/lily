@@ -4,7 +4,7 @@
           represented by distinct values. This might improve performance, although the
           benefit is probably not as large as one might expect, since the Renamer is also in charge of
 
-        - Replacing variable names by DeBrujin indices
+        - Replacing variable names by DeBruijn indices
 -}
 module Lily.Rename (rename, RenameError) where
 
@@ -14,13 +14,13 @@ import Lily.Syntax
 
 data RenameError = UnboundVar Text deriving (Show)
 
--- Variables store their DeBrujin level in the environment (1-indexed),
--- The DeBrujin index of variable `x` can then easily be calculated by the size of the environment
+-- Variables store their Debruijn level in the environment (1-indexed),
+-- The Debruijn index of variable `x` can then easily be calculated by the size of the environment
 -- minus the level of `x`
 data RenameEnv = RenameEnv
     { varLevels :: Map Text Lvl
     -- We need to store the size separately, since `Map` discards duplicates, but we have to pretend
-    -- it doesn't to calculate DeBrujin indices.
+    -- it doesn't to calculate Debruijn indices.
     , size :: Int 
     }
 
@@ -44,12 +44,12 @@ renameExpr env (Var name) = case lookup name (varLevels env) of
         lvlName' <- case lvlName of
             Nothing -> error "No level name in renamer" -- TODO: This really shouldn't have to be partial
             Just name -> pure name
-        let debrujin =
+        let debruijn =
                 Ix
                     { index = size env - level
                     , ixName = lvlName'
                     }
-        pure (Var debrujin)
+        pure (Var debruijn)
 renameExpr env (Let x (mty) value rest) = do
     (x', envWithX) <- newVar x env
     mty' <- traverse (renameExpr env) mty
