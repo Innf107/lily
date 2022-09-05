@@ -1,6 +1,48 @@
-
-let ℕ : (a : Type) -> a -> (a -> a) -> a =
-    _
+let ℕ : Type = (a : Type) -> a -> (a -> a) -> a 
 in
-Type
 
+let Z : ℕ = λa. λz. λs. z
+in
+
+let S : ℕ -> ℕ = λn. λa. λz. λs. s (n a z s)
+in
+
+let one   : ℕ = S Z     in
+let two   : ℕ = S one   in
+let three : ℕ = S two   in
+let four  : ℕ = S three in
+let five  : ℕ = S four  in
+
+let add : ℕ -> ℕ -> ℕ = 
+    λn. λm. n ℕ m S
+in
+
+let Eq : (k : Type) -> k -> k -> Type =
+    λk. λa. λb. (f : k -> Type) -> f a -> f b
+in
+
+let Refl : (k : Type) -> (a : k) -> Eq k a a =
+    λk. λa. λf. λfa. fa
+in
+
+let Symm : (k : Type) -> (a : k) -> (b : k) 
+         -> Eq k a b 
+         -> Eq k b a =
+    λk. λa. λb. λAeB. AeB (λd. Eq k d a) (Refl k a)
+in
+
+let Trans : (k : Type) -> (a : k) -> (b : k) -> (c : k)
+          -> Eq k a b 
+          -> Eq k b c
+          -> Eq k a c =
+    λk. λa. λb. λc. λAeB. λBeC.
+        BeC (Eq k a) AeB
+in
+
+let test : Eq ℕ (add two three) five = Refl ℕ five in
+
+let abs0PlusL : (n : ℕ) -> Eq ℕ (add Z n) n =
+    λn. Refl ℕ n
+in
+
+Type
