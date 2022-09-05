@@ -22,7 +22,7 @@ data Token
     | TYPE
     deriving (Show, Eq)
 
-data LexState = Default | InIdent [Char]
+data LexState = Default | InIdent [Char] | InLineComment
 
 lex :: Error LexError :> es => Text -> Eff es [Token]
 lex = go Default
@@ -39,6 +39,7 @@ lex = go Default
             '(' -> (LPAREN :) <$> go Default rest
             ')' -> (RPAREN :) <$> go Default rest
             '-' | Just newRest <- Text.stripPrefix ">" rest -> (ARROW :) <$> go Default newRest
+            '-' | Just newRest <- Text.stripPrefix "-" rest -> go InLineComment newRest
             '_' -> (UNDERSCORE :) <$> go Default rest
             ':' -> (COLON :) <$> go Default rest
             'T' | Just newRest <- Text.stripPrefix "ype" rest -> (TYPE :) <$> go Default newRest
@@ -50,4 +51,9 @@ lex = go Default
         Just (c, rest) -> case c of
             _ | Char.isAlphaNum c || c `elem` ("_-'" :: String) -> go (InIdent (c : ident)) rest
             _ -> (IDENT (toText (reverse ident)) :) <$> go Default input
+    go InLineComment input = case Text.uncons input of
+        Nothing -> pure []
+        Just (c, rest) -> case c of
+            '\n' -> go Default rest
+            _    -> go InLineComment rest
 
