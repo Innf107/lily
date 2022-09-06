@@ -69,6 +69,14 @@ let injr : (a : Type) -> (b : Type) -> b -> Either a b =
     λa. λb. λx. λc. λelimL. λelimR. elimR x
 in
 
+let Pair : Type -> Type -> Type =
+    λa. λb. (c : Type) -> (a -> b -> c) -> c
+in
+
+let MkPair : (a : Type) -> (b : Type) -> a -> b -> Pair a b =
+    λa. λb. λx. λy. λc. λf. f x y
+in
+
 let 𝟘 : Type = (a : Type) -> a
 in
 
