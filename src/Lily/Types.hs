@@ -1,5 +1,6 @@
 module Lily.Types (
     TypeError (..),
+    NamedHoleResult (..),
     infer,
     check,
     eval,
@@ -20,9 +21,12 @@ data TypeError
       --              |     | actual
       --              | expected
       AmbiguousLambdaArgument Name
-    | AmbiguousHoles
+    | AmbiguousNamedHole Name
     | NonFunctionApplication Value (SourceExpr Renamed)
     deriving (Show)
+
+data NamedHoleResult
+    = OfType Name Value
 
 data TCEnv = TCEnv
     { varTypes :: [Value]
@@ -85,7 +89,7 @@ lookupValue EvalEnv{vars} Ix{index, ixName} = go vars index
     go (_ : vs) i = go vs (i - 1)
 
 check ::
-    (Error TypeError :> es) =>
+    (Error TypeError :> es, Writer (DList NamedHoleResult) :> es) =>
     TCEnv ->
     SourceExpr Renamed ->
     Value ->
@@ -104,13 +108,16 @@ check env (Let x mty body rest) ty = do
 
     rest' <- check (addDefinition bodyValue bodyTy env) rest ty
     pure (CLet x ty' body' rest')
+check _env (NamedHole n) ty = do
+    tell @(DList NamedHoleResult) [OfType n ty]
+    pure (CNamedHole n)
 check env expr expectedTy = do
     (expr', inferredTy) <- infer env expr
     conversionCheck (currentLevel env) inferredTy expectedTy
     pure expr'
 
 infer ::
-    (Error TypeError :> es) =>
+    (Error TypeError :> es, Writer (DList NamedHoleResult) :> es) =>
     TCEnv ->
     SourceExpr Renamed ->
     Eff es (CoreExpr, Value)
@@ -149,7 +156,8 @@ infer env expr = do
         -- Maybe we could use meta variables here somehow? Who knows.
         Lambda x Nothing _ -> throwError (AmbiguousLambdaArgument x)
         Hole -> undefined
-        NamedHole xn -> undefined
+        NamedHole name -> 
+            throwError (AmbiguousNamedHole name)
         Pi x dom cod -> do
             dom' <- check env dom VType
             cod' <- check (addParamDefinition x (eval (evalEnv env) dom') env) cod VType
@@ -158,7 +166,7 @@ infer env expr = do
         Type -> pure (CType, VType)
 
 inferLet ::
-    Error TypeError :> es =>
+    (Error TypeError :> es, Writer (DList NamedHoleResult) :> es) =>
     TCEnv ->
     Maybe (SourceExpr Renamed) ->
     SourceExpr Renamed ->
@@ -238,4 +246,4 @@ applyClosure :: Closure -> Value -> Value
 applyClosure (Closure env expr) val = eval (insertValue val env) expr
 
 quote :: Lvl -> Value -> CoreExpr
-quote currentLevel  = undefined
+quote currentLevel = undefined

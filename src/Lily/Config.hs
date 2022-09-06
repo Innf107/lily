@@ -17,6 +17,7 @@ data Config = Config
     { verboseNames :: Bool
     , enabledTraces :: Set TraceCategory
     , printClosures :: Bool
+    , printDebruijn :: Bool
     }
 
 defaultConfig :: Config
@@ -25,6 +26,7 @@ defaultConfig =
         { verboseNames = False
         , enabledTraces = mempty
         , printClosures = False
+        , printDebruijn = False
         }
 
 configRef :: IORef Config

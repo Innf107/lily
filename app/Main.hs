@@ -14,6 +14,8 @@ import Lily.Types qualified as Types
 
 import Data.Set qualified as Set
 
+import System.Console.Terminal.Size as TermSize
+
 data Options = Options
     {
     }
@@ -34,6 +36,8 @@ failUsage message = do
                 , "Options:"
                 , "    --verbose-names        Disambiguate names in debug output by appending a unique number"
                 , "    --print-closures       Explicitly print closures in partially evaluated λ and Π expressions"
+                , "    --print-debruijn       Print the DeBruijn indices and levels of variables."
+                , "                           If you don't know what this means, just leave it off."
                 , "    --trace <CATEGORY>     Enable traces for CATEGORY. Possible values: " <> intercalate ", " (map show (universe @Config.TraceCategory))
                 ]
     exitFailure
@@ -41,18 +45,39 @@ failUsage message = do
 prettyTypeError :: Types.TypeError -> Text
 prettyTypeError (Types.ConversionError expected actual fullExpected fullActual) =
     unlines
-        ([ "\ESC[1mConversion Error:"
-        , "Unable to match expected type\ESC[0m"
-        , "    \ESC[1m\ESC[32m" <> show expected <> "\ESC[0m"
-        , "\ESC[1mwith actual type\ESC[0m"
-        , "    \ESC[1m\ESC[31m" <> show actual <> "\ESC[0m"
-        ] <> if expected /= fullExpected || actual /= fullActual then
-        [ "while comparing types"
-        , "    \ESC[32m" <> show expected <> "\ESC[0m"
-        , "and"
-        , "    \ESC[31m" <> show actual <> "\ESC[0m"
-        ] else [])
+        ( [ "\ESC[1mConversion Error:"
+          , "Unable to match expected type\ESC[0m"
+          , "    \ESC[1m\ESC[32m" <> show expected <> "\ESC[0m"
+          , "\ESC[1mwith actual type\ESC[0m"
+          , "    \ESC[1m\ESC[31m" <> show actual <> "\ESC[0m"
+          ]
+            <> if expected /= fullExpected || actual /= fullActual
+                then
+                    [ "while comparing types"
+                    , "    \ESC[32m" <> show expected <> "\ESC[0m"
+                    , "and"
+                    , "    \ESC[31m" <> show actual <> "\ESC[0m"
+                    ]
+                else []
+        )
 prettyTypeError err = show err -- TODO
+
+printHoles :: DList Types.NamedHoleResult -> IO ()
+printHoles holes = case toList holes of
+    [] -> pure ()
+    (initial : holes) -> do
+        width <- TermSize.size <&> \case
+            -- Use 40 columns as a fallback in case we can't get the terminal size
+            -- (or the program is not even running in a terminal)
+            Nothing -> 40
+            Just (Window { width }) -> width
+        putTextLn "\ESC[1mNamed holes"
+        putTextLn (Text.replicate width "=" <> "\ESC[0m")
+        printHole initial
+        mapM_ (\hole -> putTextLn (Text.replicate width "-") >> printHole hole) holes
+        putTextLn ("\ESC[1m" <> Text.replicate width "=" <> "\ESC[0m")
+            where
+                printHole (Types.OfType name ty) = putTextLn ("    \ESC[1m?" <> show name <> "\ESC[0m : \ESC[32m" <> show ty <> "\ESC[0m")
 
 main :: IO ()
 main = do
@@ -63,24 +88,31 @@ main = do
             tokens <- case runPureEff (runErrorNoCallStack @Lexer.LexError (Lexer.lex content)) of
                 Left err -> putStrLn ("Lexical error: " <> show err) >> exitFailure
                 Right tokens -> pure tokens
-            putStrLn ("TOKENS: " <> show tokens)
 
             let parsed = Parser.parse tokens
-            putStrLn ("\nPARSED: " <> show parsed)
 
             renamed <-
                 runEff (runErrorNoCallStack @Rename.RenameError (runFreshUnique (Rename.rename parsed))) >>= \case
                     Left err -> putStrLn ("Name resolution error: " <> show err) >> exitFailure
                     Right renamed -> pure renamed
 
-            putStrLn ("\nRENAMED: " <> show renamed)
+            -- TODO: Should we display hole types in case of a type error? Probably
+            (coreExpr, ty, holes) <-
+                runEff
+                    ( runWriterLocal @(DList Types.NamedHoleResult) $
+                        runErrorNoCallStack @Types.TypeError $
+                            Types.infer Types.emptyTCEnv renamed
+                    )
+                    >>= \case
+                        (Left err, holes) -> do
+                            printHoles holes
+                            putTextLn (prettyTypeError err)
+                            exitFailure
+                        (Right (coreExpr, ty), holes) -> do
+                            pure (coreExpr, ty, holes)
 
-            (coreExpr, ty) <-
-                runEff (runErrorNoCallStack @Types.TypeError (Types.infer Types.emptyTCEnv renamed)) >>= \case
-                    Left err -> putTextLn (prettyTypeError err) >> exitFailure
-                    Right res -> pure res
+            printHoles holes
 
-            putStrLn ("\nCORE: " <> show coreExpr)
             putStrLn ("TYPE: " <> show ty)
 
             let resultValue = Types.eval Types.emptyEvalEnv coreExpr
@@ -96,6 +128,9 @@ main = do
         parseArgs args
     parseArgs ("--print-closures" : args) = do
         Config.updateConfig (\cfg -> cfg{Config.printClosures = True})
+        parseArgs args
+    parseArgs ("--print-debruijn" : args) = do
+        Config.updateConfig (\cfg -> cfg{Config.printDebruijn = True})
         parseArgs args
     parseArgs ["--trace"] = failUsage ("'--trace' expects an argument")
     parseArgs ("--trace" : category : args) =

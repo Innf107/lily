@@ -27,6 +27,8 @@ dependencies:
 - containers
 # Dependency for happy
 - array
+- dlist
+- terminal-size
 
 ghc-options:
 - -Wall

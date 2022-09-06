@@ -71,13 +71,23 @@ instance Eq Ix where
     (Ix i _) == (Ix j _) = i == j
 
 instance S.Show Ix where
-    show (Ix i name) = show name <> "@" <> show i
+    show (Ix i name) =
+        let Config.Config{printDebruijn} = Config.getConfig ()
+         in if printDebruijn
+                then show name <> "@" <> show i
+                else show name
 
 instance Eq Lvl where
     (Lvl l1 _) == (Lvl l2 _) = l1 == l2
 
 instance S.Show Lvl where
-    show (Lvl l (Just name)) = show name <> "~" <> show l
+    show (Lvl l (Just name)) =
+        let Config.Config{printDebruijn} = Config.getConfig ()
+         in if printDebruijn
+                then show name <> "~" <> show l
+                else show name
+    -- We print the DeBruijn level unconditionally if we don't have a name.
+    -- What else would we even return here?
     show (Lvl l Nothing) = "~" <> show l
 
 data Pass = Parsed | Renamed
@@ -211,29 +221,30 @@ instance Show Value where
     showsPrec p (VApp v1 v2) =
         par p appPrec $ S.showsPrec appPrec v1 . (" " <>) . S.showsPrec atomPrec v2
     showsPrec p (VLambda x (Closure env rest)) =
-        let Config.Config { printClosures } = Config.getConfig () in
-        par p letPrec $
-            ("λ" <>) . S.shows x . 
-                (if printClosures 
-                    then ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("]. " <>)
-                    else (". " <>)
-                )
-                . S.showsPrec letPrec rest
+        let Config.Config{printClosures} = Config.getConfig ()
+         in par p letPrec $
+                ("λ" <>) . S.shows x
+                    . ( if printClosures
+                            then ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("]. " <>)
+                            else (". " <>)
+                      )
+                    . S.showsPrec letPrec rest
     showsPrec p (VPi (Just x) dom (Closure env rest)) =
-        let Config.Config { printClosures } = Config.getConfig () in
-        par p piPrec $
-            ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . 
-                (if printClosures 
-                    then (")[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
-                    else (") -> " <>)
-                )
-                . S.showsPrec letPrec rest
+        let Config.Config{printClosures} = Config.getConfig ()
+         in par p piPrec $
+                ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom
+                    . ( if printClosures
+                            then (")[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+                            else (") -> " <>)
+                      )
+                    . S.showsPrec letPrec rest
     showsPrec p (VPi Nothing dom (Closure env rest)) =
-        let Config.Config { printClosures } = Config.getConfig () in
-        par p piPrec $
-            S.showsPrec appPrec dom . 
-                (if printClosures
-                    then ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
-                    else (" -> "<>))
-                . S.showsPrec piPrec rest
-    showsPrec _ (VType) = ("Type"<>)
+        let Config.Config{printClosures} = Config.getConfig ()
+         in par p piPrec $
+                S.showsPrec appPrec dom
+                    . ( if printClosures
+                            then ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+                            else (" -> " <>)
+                      )
+                    . S.showsPrec piPrec rest
+    showsPrec _ (VType) = ("Type" <>)
