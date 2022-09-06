@@ -16,6 +16,7 @@ import Debug.Trace qualified
 data Config = Config
     { verboseNames :: Bool
     , enabledTraces :: Set TraceCategory
+    , printClosures :: Bool
     }
 
 defaultConfig :: Config
@@ -23,6 +24,7 @@ defaultConfig =
     Config
         { verboseNames = False
         , enabledTraces = mempty
+        , printClosures = False
         }
 
 configRef :: IORef Config

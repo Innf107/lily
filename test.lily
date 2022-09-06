@@ -1,17 +1,17 @@
 let ℕ : Type = (a : Type) -> a -> (a -> a) -> a 
 in
 
-let Z : ℕ = λa. λz. λs. z
+let 0 : ℕ = λa. λz. λs. z
 in
 
 let S : ℕ -> ℕ = λn. λa. λz. λs. s (n a z s)
 in
 
-let one   : ℕ = S Z     in
-let two   : ℕ = S one   in
-let three : ℕ = S two   in
-let four  : ℕ = S three in
-let five  : ℕ = S four  in
+let 1 : ℕ = S 0 in
+let 2 : ℕ = S 1 in
+let 3 : ℕ = S 2 in
+let 4 : ℕ = S 3 in
+let 5 : ℕ = S 4 in
 
 let add : ℕ -> ℕ -> ℕ = 
     λn. λm. n ℕ m S
@@ -39,19 +39,19 @@ let Trans : (k : Type) -> (a : k) -> (b : k) -> (c : k)
         BeC (Eq k a) AeB
 in
 
-let test : Eq ℕ (add two three) five = Refl ℕ five in
+let test : Eq ℕ (add 2 3) 5 = Refl ℕ 5 in
 
-let abs0PlusL : (n : ℕ) -> Eq ℕ (add Z n) n =
+let abs0PlusL : (n : ℕ) -> Eq ℕ (add 0 n) n =
     λn. Refl ℕ n
 in
 
--- let indℕ : (P : ℕ -> Type) -> P Z -> ((n : ℕ) -> P n -> P (S n)) -> (m : ℕ) -> P m = 
---     λp. λpZ. λpInd. λm. _ 
+-- let indℕ : (P : ℕ -> Type) -> P 0 -> ((n : ℕ) -> P n -> P (S n)) -> (m : ℕ) -> P m = 
+--     λp. λp0. λpInd. λm. _ 
 -- in
 
 -- This needs induction over naturals. No idea how to do that with church naturals.
 -- Guess I'll have to add inductive types now, don't I?
--- let abs0PlusR : (n : ℕ) -> Eq ℕ (add n Z) n =
+-- let abs0PlusR : (n : ℕ) -> Eq ℕ (add n 0) n =
 --     λn. n 
 --         _ 
 --         _ 
@@ -61,6 +61,23 @@ let Either : Type -> Type -> Type =
     λa. λb. (c : Type) -> (a -> c) -> (b -> c) -> c
 in
 
-let injl : Either Type Type = Type in
+let injl : (a : Type) -> (b : Type) -> a -> Either a b = 
+    λa. λb. λx. λc. λelimL. λelimR. elimL x
+in
+
+let injr : (a : Type) -> (b : Type) -> b -> Either a b =
+    λa. λb. λx. λc. λelimL. λelimR. elimR x
+in
+
+let 𝟘 : Type = (a : Type) -> a
+in
+
+let ¬ : Type -> Type = λa. a -> 𝟘 in
+
+let TripleNeg : (a : Type) -> ¬ (¬ (¬ a)) -> ¬ a = 
+    λa. λf. λx. f (λg. g x)
+in
+
+
 
 Type

@@ -33,12 +33,26 @@ failUsage message = do
                 , ""
                 , "Options:"
                 , "    --verbose-names        Disambiguate names in debug output by appending a unique number"
+                , "    --print-closures       Explicitly print closures in partially evaluated λ and Π expressions"
                 , "    --trace <CATEGORY>     Enable traces for CATEGORY. Possible values: " <> intercalate ", " (map show (universe @Config.TraceCategory))
                 ]
     exitFailure
 
 prettyTypeError :: Types.TypeError -> Text
-prettyTypeError x = show x
+prettyTypeError (Types.ConversionError expected actual fullExpected fullActual) =
+    unlines
+        ([ "\ESC[1mConversion Error:"
+        , "Unable to match expected type\ESC[0m"
+        , "    \ESC[1m\ESC[32m" <> show expected <> "\ESC[0m"
+        , "\ESC[1mwith actual type\ESC[0m"
+        , "    \ESC[1m\ESC[31m" <> show actual <> "\ESC[0m"
+        ] <> if expected /= fullExpected || actual /= fullActual then
+        [ "while comparing types"
+        , "    \ESC[32m" <> show expected <> "\ESC[0m"
+        , "and"
+        , "    \ESC[31m" <> show actual <> "\ESC[0m"
+        ] else [])
+prettyTypeError err = show err -- TODO
 
 main :: IO ()
 main = do
@@ -79,6 +93,9 @@ main = do
     parseArgs [] = pure (defaultOptions, [])
     parseArgs ("--verbose-names" : args) = do
         Config.updateConfig (\cfg -> cfg{Config.verboseNames = True})
+        parseArgs args
+    parseArgs ("--print-closures" : args) = do
+        Config.updateConfig (\cfg -> cfg{Config.printClosures = True})
         parseArgs args
     parseArgs ["--trace"] = failUsage ("'--trace' expects an argument")
     parseArgs ("--trace" : category : args) =

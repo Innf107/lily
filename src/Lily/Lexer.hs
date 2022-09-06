@@ -43,8 +43,8 @@ lex = go Default
             '-' | Just newRest <- Text.stripPrefix "-" rest -> go InLineComment newRest
             '_' -> (UNDERSCORE :) <$> go Default rest
             ':' -> (COLON :) <$> go Default rest
-            _ | Char.isAlpha c -> go (InIdent (one c)) rest
             _ | Char.isSpace c -> go Default rest
+            _ | Char.isPrint c -> go (InIdent (one c)) rest
             _ -> throwError (InvalidChar c)
     go (InIdent ident) input = case Text.uncons input of
         Nothing -> pure [buildIdent ident]

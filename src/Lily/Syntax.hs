@@ -111,6 +111,7 @@ data CoreExpr
     | CNamedHole Name
     | CPi (Maybe Name) CoreExpr CoreExpr
     | CType
+    deriving (Eq)
 
 -- | Values are results of evaluation and are used in type checking via Normalization by Evalutation (NBE)
 data Value
@@ -119,6 +120,7 @@ data Value
     | VLambda Name Closure
     | VPi (Maybe Name) ~Value Closure
     | VType
+    deriving (Eq)
 
 -- Defined here for now, since we need the environment to define closures
 -- and we need closures to define values.
@@ -126,9 +128,9 @@ data Value
 data EvalEnv = EvalEnv
     { vars :: [Value]
     }
-    deriving (Show)
+    deriving (Show, Eq)
 
-data Closure = Closure EvalEnv ~CoreExpr deriving (Show)
+data Closure = Closure EvalEnv ~CoreExpr deriving (Show, Eq)
 
 -- precedences
 atomPrec, appPrec, piPrec, letPrec :: Int
@@ -209,15 +211,29 @@ instance Show Value where
     showsPrec p (VApp v1 v2) =
         par p appPrec $ S.showsPrec appPrec v1 . (" " <>) . S.showsPrec atomPrec v2
     showsPrec p (VLambda x (Closure env rest)) =
+        let Config.Config { printClosures } = Config.getConfig () in
         par p letPrec $
-            ("λ" <>) . S.shows x . ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("]. " <>)
+            ("λ" <>) . S.shows x . 
+                (if printClosures 
+                    then ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("]. " <>)
+                    else (". " <>)
+                )
                 . S.showsPrec letPrec rest
     showsPrec p (VPi (Just x) dom (Closure env rest)) =
+        let Config.Config { printClosures } = Config.getConfig () in
         par p piPrec $
-            ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . (")[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+            ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . 
+                (if printClosures 
+                    then (")[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+                    else (") -> " <>)
+                )
                 . S.showsPrec letPrec rest
     showsPrec p (VPi Nothing dom (Closure env rest)) =
+        let Config.Config { printClosures } = Config.getConfig () in
         par p piPrec $
-            S.showsPrec appPrec dom . ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+            S.showsPrec appPrec dom . 
+                (if printClosures
+                    then ("[" <>) . (toString (intercalate ", " (map show (vars env))) <>) . ("] -> " <>)
+                    else (" -> "<>))
                 . S.showsPrec piPrec rest
     showsPrec _ (VType) = ("Type"<>)
