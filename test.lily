@@ -78,10 +78,4 @@ let TripleNeg : (a : Type) -> ¬ (¬ (¬ a)) -> ¬ a =
     λa. λf. λx. f (λg. g x)
 in
 
-let a : Type = ?x in
-
-let TripleNeg2 : (a : Type) -> ¬ (¬ (¬ a)) -> ¬ a = 
-    ?a
-in
-
 Type

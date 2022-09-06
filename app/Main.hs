@@ -71,7 +71,7 @@ printHoles holes = case toList holes of
             -- (or the program is not even running in a terminal)
             Nothing -> 40
             Just (Window { width }) -> width
-        putTextLn "\ESC[1mNamed holes"
+        putTextLn "\ESC[1mUnresolved Named holes"
         putTextLn (Text.replicate width "=" <> "\ESC[0m")
         printHole initial
         mapM_ (\hole -> putTextLn (Text.replicate width "-") >> printHole hole) holes
@@ -111,7 +111,11 @@ main = do
                         (Right (coreExpr, ty), holes) -> do
                             pure (coreExpr, ty, holes)
 
-            printHoles holes
+            case holes of 
+                [] -> pure ()
+                _ -> do
+                    printHoles holes
+                    exitFailure
 
             putStrLn ("TYPE: " <> show ty)
 
