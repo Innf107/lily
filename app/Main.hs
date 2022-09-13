@@ -43,9 +43,9 @@ failUsage message = do
     exitFailure
 
 prettyTypeError :: Types.TypeError -> Text
-prettyTypeError (Types.ConversionError expected actual fullExpected fullActual) =
+prettyTypeError (Types.ConversionError span expected actual fullExpected fullActual) =
     unlines
-        ( [ "\ESC[1mConversion Error:"
+        ( [ "\ESC[1m" <> show span <> ": Conversion Error:"
           , "Unable to match expected type\ESC[0m"
           , "    \ESC[1m\ESC[32m" <> show expected <> "\ESC[0m"
           , "\ESC[1mwith actual type\ESC[0m"
@@ -77,7 +77,7 @@ printHoles holes = case toList holes of
         mapM_ (\hole -> putTextLn (Text.replicate width "-") >> printHole hole) holes
         putTextLn ("\ESC[1m" <> Text.replicate width "=" <> "\ESC[0m")
             where
-                printHole (Types.OfType name ty) = putTextLn ("    \ESC[1m?" <> show name <> "\ESC[0m : \ESC[32m" <> show ty <> "\ESC[0m")
+                printHole (Types.OfType span name ty) = putTextLn ("\ESC[1m" <> show span <> ": ?" <> show name <> "\ESC[0m : \ESC[32m" <> show ty <> "\ESC[0m")
 
 main :: IO ()
 main = do
@@ -85,7 +85,7 @@ main = do
     case args of
         [file] -> do
             content <- readFileText file
-            tokens <- case runPureEff (runErrorNoCallStack @Lexer.LexError (Lexer.lex content)) of
+            tokens <- case runPureEff (runErrorNoCallStack @Lexer.LexError (Lexer.lex file content)) of
                 Left err -> putStrLn ("Lexical error: " <> show err) >> exitFailure
                 Right tokens -> pure tokens
 

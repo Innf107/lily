@@ -29,8 +29,10 @@ library
       Lily.Effect.Fresh
       Lily.Lexer
       Lily.Parser
+      Lily.Parser.Util
       Lily.Prelude
       Lily.Rename
+      Lily.Span
       Lily.Syntax
       Lily.Types
   other-modules:

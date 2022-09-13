@@ -4,11 +4,15 @@ module Lily.Syntax (
     SourceExpr (..),
     CoreExpr (..),
     Value (..),
+    NeverEqual (..),
     Closure (..),
     Name (..),
+    internalName,
     Ix (..),
     Lvl (..),
     incLevel,
+    PrimOp (..),
+    asPrimOp,
     Pass (..),
     XName,
     EvalEnv (..),
@@ -19,10 +23,23 @@ import Lily.Prelude
 
 import Lily.Config qualified as Config
 
+import System.IO.Unsafe qualified as Unsafe
+
 data Name = UnsafeMkName
     { getName :: Text
     , unique :: Unique
     }
+
+internalUnique :: Unique
+internalUnique = Unsafe.unsafePerformIO newUnique
+{-# NOINLINE internalUnique #-}
+
+internalName :: Text -> Name
+internalName name =
+    UnsafeMkName
+        { getName = name
+        , unique = internalUnique
+        }
 
 {- | Equality on names is *entirely determined by the attached unique*.
  This means that we absolutely have to make sure, that different names
@@ -102,18 +119,25 @@ type family XVar p where
     XVar Parsed = Text
     XVar Renamed = Ix
 
+type XPrimOp :: Pass -> Type
+type family XPrimOp p where
+    XPrimOp Parsed = Void
+    XPrimOp Renamed = PrimOp
+
 data SourceExpr (p :: Pass)
-    = Var (XVar p) -- x
-    | Let (XName p) (Maybe (SourceExpr p)) (SourceExpr p) (SourceExpr p) -- let x [: e₁] = e₂ in e₃
-    | App (SourceExpr p) (SourceExpr p) -- e₁ e₂
-    | Lambda (XName p) (Maybe (SourceExpr p)) (SourceExpr p) -- λx. e₂ | λ(x : e₁). e₂
-    | Hole -- _
-    | NamedHole (XName p) -- ?x
-    | Pi (Maybe (XName p)) (SourceExpr p) (SourceExpr p) -- (x : e₁) -> e₂
-    | Type -- Type
+    = Var Span (XVar p) -- x
+    | Prim Span (XPrimOp p)
+    | Let Span (XName p) (Maybe (SourceExpr p)) (SourceExpr p) (SourceExpr p) -- let x [: e₁] = e₂ in e₃
+    | App Span (SourceExpr p) (SourceExpr p) -- e₁ e₂
+    | Lambda Span (XName p) (Maybe (SourceExpr p)) (SourceExpr p) -- λx. e₂ | λ(x : e₁). e₂
+    | Hole Span -- _
+    | NamedHole Span (XName p) -- ?x
+    | Pi Span (Maybe (XName p)) (SourceExpr p) (SourceExpr p) -- (x : e₁) -> e₂
+    | Type Span -- Type
 
 data CoreExpr
     = CVar Ix
+    | CPrim PrimOp
     | CLet Name CoreExpr CoreExpr CoreExpr
     | CApp CoreExpr CoreExpr
     | CLambda Name (Maybe CoreExpr) CoreExpr
@@ -126,11 +150,34 @@ data CoreExpr
 -- | Values are results of evaluation and are used in type checking via Normalization by Evalutation (NBE)
 data Value
     = VVar Lvl
-    | VApp Value ~Value
+    | VPrimClosure PrimOp Int (DList Value)
+    | --                    ^   ^ already applied
+      --                    | missing arguments
+      VApp Value ~Value
     | VLambda Name Closure
     | VPi (Maybe Name) ~Value Closure
     | VType
     deriving (Eq)
+
+newtype NeverEqual a = NeverEqual {unNeverEqual :: a}
+    deriving newtype (Show)
+
+instance Eq (NeverEqual a) where
+    _ == _ = False
+
+data PrimOp
+    = UnsafeFix
+    | UnsafeCoerce
+    deriving (Eq)
+
+asPrimOp :: Text -> Maybe PrimOp
+asPrimOp "unsafeFix#" = Just UnsafeFix
+asPrimOp "unsafeCoerce#" = Just UnsafeCoerce
+asPrimOp _ = Nothing
+
+instance Show PrimOp where
+    show UnsafeFix = "unsafeFix#"
+    show UnsafeCoerce = "unsafeCoerce#"
 
 -- Defined here for now, since we need the environment to define closures
 -- and we need closures to define values.
@@ -162,37 +209,45 @@ instance PrettyName Text where
 instance PrettyName Ix where
     prettyS = S.shows
 
-instance (PrettyName (XVar p), PrettyName (XName p)) => S.Show (SourceExpr p) where
-    showsPrec _ (Var x) = prettyS x
-    showsPrec p (Let x Nothing body rest) =
+instance PrettyName Void where
+    prettyS = \case {}
+
+instance PrettyName PrimOp where
+    prettyS x = S.shows x
+
+instance (PrettyName (XVar p), PrettyName (XName p), PrettyName (XPrimOp p)) => S.Show (SourceExpr p) where
+    showsPrec _ (Var _ x) = prettyS x
+    showsPrec _ (Prim _ p) = prettyS p
+    showsPrec p (Let _ x Nothing body rest) =
         par p letPrec $
             ("let " <>) . prettyS x . (" = " <>) . S.showsPrec appPrec body
                 <> ("in\n" <>)
                     . S.showsPrec letPrec rest
-    showsPrec p (Let x (Just ty) body rest) =
+    showsPrec p (Let _ x (Just ty) body rest) =
         par p letPrec $
             ("let " <>) . prettyS x . (" : " <>) . S.showsPrec piPrec ty
                 . ("\n    = " <>)
                 . S.showsPrec letPrec body
                 . ("\nin\n" <>)
                 . S.showsPrec letPrec rest
-    showsPrec p (App e1 e2) =
+    showsPrec p (App _ e1 e2) =
         par p appPrec $ S.showsPrec appPrec e1 . (" " <>) . S.showsPrec atomPrec e2
-    showsPrec p (Lambda x Nothing body) =
+    showsPrec p (Lambda _ x Nothing body) =
         par p letPrec $ ("λ" <>) . prettyS x . (". " <>) . S.showsPrec letPrec body
-    showsPrec p (Lambda x (Just ty) body) =
+    showsPrec p (Lambda _ x (Just ty) body) =
         par p letPrec $ ("λ(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec ty . ("). " <>) . S.showsPrec letPrec body
-    showsPrec _ Hole = ("_" <>)
-    showsPrec _ (NamedHole name) = ("?" <>) . prettyS name
-    showsPrec p (Pi Nothing e1 e2) = par p piPrec $ S.showsPrec appPrec e1 . (" -> " <>) . S.showsPrec piPrec e2
-    showsPrec p (Pi (Just x) dom cod) =
+    showsPrec _ (Hole _) = ("_" <>)
+    showsPrec _ (NamedHole _ name) = ("?" <>) . prettyS name
+    showsPrec p (Pi _ Nothing e1 e2) = par p piPrec $ S.showsPrec appPrec e1 . (" -> " <>) . S.showsPrec piPrec e2
+    showsPrec p (Pi _ (Just x) dom cod) =
         par p piPrec $
             ("(" <>) . prettyS x . (" : " <>) . S.showsPrec appPrec dom . (") -> " <>)
                 . S.showsPrec letPrec cod
-    showsPrec _ Type = ("Type" <>)
+    showsPrec _ (Type _) = ("Type" <>)
 
 instance Show CoreExpr where
     showsPrec _ (CVar x) = S.shows x
+    showsPrec _ (CPrim x) = S.shows x
     showsPrec p (CLet x ty body rest) =
         par p letPrec $
             ("let " <>) . prettyS x . (" : " <>) . S.showsPrec piPrec ty
@@ -218,6 +273,9 @@ instance Show CoreExpr where
 
 instance Show Value where
     showsPrec _ (VVar lvl) = S.shows lvl
+    showsPrec p (VPrimClosure prim _ []) = S.shows prim
+    showsPrec p (VPrimClosure prim _ args) =
+        par p appPrec $ S.shows prim . (foldMap (\x -> (" " <>) . S.showsPrec atomPrec x) args)
     showsPrec p (VApp v1 v2) =
         par p appPrec $ S.showsPrec appPrec v1 . (" " <>) . S.showsPrec atomPrec v2
     showsPrec p (VLambda x (Closure env rest)) =
@@ -248,3 +306,15 @@ instance Show Value where
                       )
                     . S.showsPrec piPrec rest
     showsPrec _ (VType) = ("Type" <>)
+
+instance Spanned (SourceExpr p) where
+    spanOf = \case
+        Var span _ -> span
+        Prim span _ -> span
+        Let span _ _ _ _ -> span
+        App span _ _ -> span
+        Lambda span _ _ _ -> span
+        Hole span -> span
+        NamedHole span _ -> span
+        Pi span _ _ _ -> span
+        Type span -> span

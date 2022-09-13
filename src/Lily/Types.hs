@@ -15,18 +15,18 @@ import Lily.Syntax
 import Lily.Config as Config
 
 data TypeError
-    = ConversionError Value Value Value Value
-    | --              ^     ^     ^     ^ full actual
-      --              |     |     | full expected
-      --              |     | actual
-      --              | expected
-      AmbiguousLambdaArgument Name
-    | AmbiguousNamedHole Name
-    | NonFunctionApplication Value (SourceExpr Renamed)
+    = ConversionError Span Value Value Value Value
+    | --                   ^     ^     ^     ^ full actual
+      --                   |     |     | full expected
+      --                   |     | actual
+      --                   | expected
+      AmbiguousLambdaArgument Span Name
+    | AmbiguousNamedHole Span Name
+    | NonFunctionApplication Span Value (SourceExpr Renamed)
     deriving (Show)
 
 data NamedHoleResult
-    = OfType Name Value
+    = OfType Span Name Value
 
 data TCEnv = TCEnv
     { varTypes :: [Value]
@@ -97,23 +97,23 @@ check ::
 check _ expr ty | False <- trace TC ("[check]: (" <> show expr <> ") : " <> show ty) True = error "unreachable"
 -- We can ignore the name in the Π type, since we only include it for diagnostics anyway.
 -- The variable is represented by its DeBruijn index.
-check env (Lambda x Nothing body) (VPi _ dom closure) = do
+check env (Lambda _ x Nothing body) (VPi _ dom closure) = do
     CLambda x Nothing
         -- We again don't need to insert the name, since Core already uses DeBruijn indices
         <$> check (addParamDefinition (Just x) dom env) body (applyClosure closure (VVar ((currentLevel env){lvlName = Just x})))
-check env (Let x mty body rest) ty = do
+check env (Let _ x mty body rest) ty = do
     (ty', body', bodyTy) <- inferLet env mty body
 
     let ~bodyValue = eval (evalEnv env) body'
 
     rest' <- check (addDefinition bodyValue bodyTy env) rest ty
     pure (CLet x ty' body' rest')
-check _env (NamedHole n) ty = do
-    tell @(DList NamedHoleResult) [OfType n ty]
+check _env (NamedHole span n) ty = do
+    tell @(DList NamedHoleResult) [OfType span n ty]
     pure (CNamedHole n)
 check env expr expectedTy = do
     (expr', inferredTy) <- infer env expr
-    conversionCheck (currentLevel env) inferredTy expectedTy
+    conversionCheck (spanOf expr) (currentLevel env) inferredTy expectedTy
     pure expr'
 
 infer ::
@@ -124,8 +124,9 @@ infer ::
 infer env expr = do
     traceM TC ("[infer]: " <> show expr)
     case expr of
-        Var x -> pure (CVar x, lookupType env x)
-        Let x mty body rest -> do
+        Var _ x -> pure (CVar x, lookupType env x)
+        Prim _ x -> pure (CPrim x, primOpType x)
+        Let _ x mty body rest -> do
             (ty', body', bodyTy) <- inferLet env mty body
 
             -- Not a massive fan of using implicit laziness here but okay
@@ -133,14 +134,14 @@ infer env expr = do
 
             (rest', restTy) <- infer (addDefinition bodyValue bodyTy env) rest
             pure (CLet x ty' body' rest', restTy)
-        e@(App fun arg) -> do
+        e@(App span fun arg) -> do
             (fun', funTy) <- infer env fun
             case funTy of
                 VPi _ dom clos -> do
                     arg' <- check env arg dom
                     pure (CApp fun' arg', applyClosure clos (eval (evalEnv env) arg'))
-                _ -> throwError (NonFunctionApplication funTy e)
-        Lambda x (Just tySourceExpr) body -> do
+                _ -> throwError (NonFunctionApplication span funTy e)
+        Lambda _ x (Just tySourceExpr) body -> do
             tyCoreExpr <- check env tySourceExpr VType -- Same reasoning as type annotations in 'let' above
             let ty = eval (evalEnv env) tyCoreExpr
             let env' = addParamDefinition (Just x) ty env
@@ -154,16 +155,16 @@ infer env expr = do
             pure (CLambda x (Just tyCoreExpr) body', resultTy)
         -- We cannot infer @x@ without unification variables or something similar.
         -- Maybe we could use meta variables here somehow? Who knows.
-        Lambda x Nothing _ -> throwError (AmbiguousLambdaArgument x)
-        Hole -> undefined
-        NamedHole name -> 
-            throwError (AmbiguousNamedHole name)
-        Pi x dom cod -> do
+        Lambda span x Nothing _ -> throwError (AmbiguousLambdaArgument span x)
+        Hole _ -> undefined
+        NamedHole span name ->
+            throwError (AmbiguousNamedHole span name)
+        Pi _ x dom cod -> do
             dom' <- check env dom VType
             cod' <- check (addParamDefinition x (eval (evalEnv env) dom') env) cod VType
             pure (CPi x dom' cod', VType)
         -- Yes, TypeInType. Fight me
-        Type -> pure (CType, VType)
+        Type _ -> pure (CType, VType)
 
 inferLet ::
     (Error TypeError :> es, Writer (DList NamedHoleResult) :> es) =>
@@ -187,20 +188,20 @@ inferLet env mty body = case mty of
         body' <- check env body bodyTy
         pure (tyCoreExpr, body', bodyTy)
 
-conversionCheck :: Error TypeError :> es => Lvl -> Value -> Value -> Eff es ()
-conversionCheck level expected inferred = case (expected, inferred) of
+conversionCheck :: Error TypeError :> es => Span -> Lvl -> Value -> Value -> Eff es ()
+conversionCheck span level expected inferred = case (expected, inferred) of
     (VType, VType) -> pure ()
     (VPi x1 dom1 clos1, VPi x2 dom2 clos2) -> do
-        conversionCheck level dom1 dom2
+        conversionCheck span level dom1 dom2
         -- We check that the codomains are equivalent by
         -- applying them to a 'free'(?) variable.
-        conversionCheck
+        conversionCheck span
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = x1})))
             (applyClosure clos2 (VVar (level{lvlName = x2})))
     (VLambda x1 clos1, VLambda x2 clos2) ->
         -- Same reasoning as Π types, except we don't have a domain to check.
-        conversionCheck
+        conversionCheck span
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = Just x1})))
             (applyClosure clos2 (VVar (level{lvlName = Just x2})))
@@ -209,7 +210,7 @@ conversionCheck level expected inferred = case (expected, inferred) of
         -- (It's probably either free variable or another application involving free variables),
         -- So we do the same check as in the case above, but create a new `VApp` in the second case
         -- insetead of applying a closure (which we don't have yet!)
-        conversionCheck
+        conversionCheck span
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = Just x})))
             (VApp value (VVar level))
@@ -217,19 +218,22 @@ conversionCheck level expected inferred = case (expected, inferred) of
     -- α-conversion or anything annyoing like that here
     (VVar lvl1, VVar lvl2) | lvl1 == lvl2 -> pure ()
     (VApp fun1 arg1, VApp fun2 arg2) -> do
-        conversionCheck level fun1 fun2
-        conversionCheck level arg1 arg2
-    (ty1, ty2) -> throwError (ConversionError ty1 ty2 expected inferred)
+        conversionCheck span level fun1 fun2
+        conversionCheck span level arg1 arg2
+    (ty1, ty2) -> throwError (ConversionError span ty1 ty2 expected inferred)
 
 eval :: HasCallStack => EvalEnv -> CoreExpr -> Value
 eval _ expr | False <- trace Config.Eval ("[eval]: " <> show expr) True = error "unreachable"
 eval env (CVar ix) =
     let result = lookupValue env ix
      in trace Config.Eval ("[eval var]: " <> show ix <> " ==> " <> show result) result
+eval env (CPrim prim) = (VPrimClosure prim (primArgCount prim) [])
 eval env (CLet _ _ body rest) =
     eval (insertValue (eval env body) env) rest
 eval env (CApp e1 e2) = case (eval env e1, eval env e2) of
     (VLambda _ clos, v2) -> applyClosure clos v2
+    (VPrimClosure prim 1 vs, v) -> evalPrimOp prim (toList (vs <> [v]))
+    (VPrimClosure prim n vs, v) -> VPrimClosure prim (n - 1) (vs <> [v])
     (v1, v2) -> VApp v1 v2
 -- Evaluating a lambda drops its type signature.
 -- TODO: We could probably already drop the signature
@@ -247,3 +251,44 @@ applyClosure (Closure env expr) val = eval (insertValue val env) expr
 
 quote :: Lvl -> Value -> CoreExpr
 quote currentLevel = undefined
+
+primOpType :: PrimOp -> Value
+-- unsafeFix : (a : Type) -> (a -> a) -> a
+primOpType UnsafeFix =
+    VPi (Just (internalName "a")) VType $
+        Closure emptyEvalEnv $
+            CPi
+                Nothing
+                ( CPi
+                    Nothing
+                    (CVar (Ix 0 (internalName "a")))
+                    (CVar (Ix 1 (internalName "a")))
+                )
+                (CVar (Ix 1 (internalName "a")))
+-- unsafeCoerce# : (k : Type) -> (a : k) -> (b : k) -> a -> b
+primOpType UnsafeCoerce =
+    VPi (Just (internalName "k")) VType $
+        Closure emptyEvalEnv $
+            CPi
+                (Just (internalName "a"))
+                (CVar (Ix 0 (internalName "k")))
+                ( CPi
+                    (Just (internalName "b"))
+                    (CVar (Ix 1 (internalName "k")))
+                    ( CPi
+                        Nothing
+                        (CVar (Ix 1 (internalName "a")))
+                        (CVar (Ix 1 (internalName "b")))
+                    )
+                )
+
+primArgCount :: PrimOp -> Int
+primArgCount UnsafeFix = 2
+primArgCount UnsafeCoerce = 4
+
+evalPrimOp :: PrimOp -> [Value] -> Value
+-- unsafeFix ty f = f (unsafeFix ty f)
+-- unsafeFix ty f = let g = f g in g
+evalPrimOp UnsafeFix [_ty, (VLambda _ closure)] =
+    let g = applyClosure closure g in g
+evalPrimOp primOp args = error ("Invalid primop/argument combination: " <> show primOp <> " | " <> show args)

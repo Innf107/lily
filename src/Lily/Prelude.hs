@@ -19,3 +19,5 @@ import Relude as Export hiding (
  )
 import Relude.Extra as Export
 import Data.DList as Export (DList)
+
+import Lily.Span as Export
