@@ -25,10 +25,11 @@ dependencies:
 - effectful
 - text
 - containers
-# Dependency for happy
-- array
 - dlist
 - terminal-size
+- ghc-prim
+# Dependency for happy
+- array
 
 ghc-options:
 - -Wall

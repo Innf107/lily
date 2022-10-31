@@ -99,6 +99,7 @@ library
     , containers
     , dlist
     , effectful
+    , ghc-prim
     , relude
     , terminal-size
     , text
@@ -170,6 +171,7 @@ executable lily
     , containers
     , dlist
     , effectful
+    , ghc-prim
     , lily
     , relude
     , terminal-size
@@ -243,6 +245,7 @@ test-suite lily-test
     , containers
     , dlist
     , effectful
+    , ghc-prim
     , lily
     , relude
     , terminal-size

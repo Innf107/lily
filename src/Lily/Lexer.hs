@@ -10,6 +10,7 @@ data TokenClass
     = IDENT Text
     | LAMBDA
     | LET
+    | INDUCTIVE
     | IN
     | QUESTIONMARK
     | EQUALS
@@ -19,6 +20,7 @@ data TokenClass
     | ARROW
     | UNDERSCORE
     | COLON
+    | PIPE
     | TYPE
     deriving (Show, Eq)
 
@@ -30,7 +32,7 @@ instance Spanned Token where
 data LexState = Default | InIdent [Char] | InLineComment
 
 reserved :: Map Text TokenClass
-reserved = [("let", LET), ("in", IN), ("Type", TYPE)]
+reserved = [("let", LET), ("inductive", INDUCTIVE), ("in", IN), ("Type", TYPE)]
 
 inc :: Span -> Span
 inc span@UnsafeMkSpan{endCol} = span{endCol = endCol + 1}
@@ -59,6 +61,7 @@ lex filePath = go (UnsafeMkSpan filePath 1 1 1 1) Default
                     '-' | Just newRest <- Text.stripPrefix "-" rest -> go (inc (inc span)) InLineComment newRest
                     '_' -> (Token UNDERSCORE (inc span) :) <$> go (inc span) Default rest
                     ':' -> (Token COLON (inc span) :) <$> go (inc span) Default rest
+                    '|' -> (Token PIPE (inc span) :) <$> go (inc span) Default rest
                     '\n' -> go (incLine span) Default rest
                     _ | Char.isSpace c -> go (inc span) Default rest
                     _ | Char.isPrint c -> go (inc span) (InIdent (one c)) rest

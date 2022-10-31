@@ -63,6 +63,7 @@ renameExpr env (Let span x (mty) value rest) = do
     rest' <- renameExpr envWithX rest
 
     pure $ Let span x' mty' value' rest'
+renameExpr env (Inductive span x args constrs body) = undefined
 renameExpr env (App span e1 e2) = App span <$> renameExpr env e1 <*> renameExpr env e2
 renameExpr env (Lambda span x mty body) = do
     (x', envWithX) <- newVar x env

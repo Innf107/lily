@@ -19,6 +19,7 @@ import Lily.Parser.Util
 %token identS           { (IdentToken $$) }
 %token 'λ'              { (Token LAMBDA _) }
 %token let              { (Token LET _) }
+%token inductive        { (Token INDUCTIVE _) }
 %token in               { (Token IN _) }
 %token '?'              { (Token QUESTIONMARK _) }
 %token '='              { (Token EQUALS _) }
@@ -28,6 +29,7 @@ import Lily.Parser.Util
 %token '->'             { (Token ARROW _) }
 %token '_'              { (Token UNDERSCORE _) }
 %token ':'              { (Token COLON _) }
+%token '|'              { (Token PIPE _) }
 %token type             { (Token TYPE _) }
 
 %%
@@ -37,11 +39,13 @@ ident :: { Text }
 ident : identS { fst $1 }
 
 Expr :: { SourceExpr Parsed }
-Expr : let ident '=' Expr in Expr                       { Let (withSpan $1 $6) $2 Nothing $4 $6 }
-     | let ident ':' Expr '=' Expr in Expr              { Let (withSpan $1 $8) $2 (Just $4) $6 $8}
-     | 'λ' ident '.' Expr                               { Lambda (withSpan $1 $4) $2 Nothing $4 }
-     | 'λ' '(' ident ':' Expr ')' '.' Expr              { Lambda (withSpan $1 $8) $3 (Just $5) $8 } 
-     | Expr1                                            { $1 }
+Expr : let ident '=' Expr in Expr                                       { Let (withSpan $1 $6) $2 Nothing $4 $6 }
+     | let ident ':' Expr '=' Expr in Expr                              { Let (withSpan $1 $8) $2 (Just $4) $6 $8 }
+     | let inductive ident TypedIdentList in Expr                       { Inductive (withSpan $1 $6) $3 $4 [] $6 }
+     | let inductive ident TypedIdentList '=' PipeConstrList in Expr    { Inductive (withSpan $1 $8) $3 $4 $6 $8 }
+     | 'λ' ident '.' Expr                                               { Lambda (withSpan $1 $4) $2 Nothing $4 }
+     | 'λ' '(' ident ':' Expr ')' '.' Expr                              { Lambda (withSpan $1 $8) $3 (Just $5) $8 } 
+     | Expr1                                                            { $1 }
 
 Expr1 : Expr2 '->' Expr                         { Pi (withSpan $1 $3) Nothing $1 $3 }
       | '(' ident ':' Expr ')' '->' Expr        { Pi (withSpan $1 $7) (Just $2) $4 $7 }
@@ -57,6 +61,11 @@ Expr3 : identS          { Var (withSpan (snd $1) (snd $1)) (fst $1) }
       | type            { Type (withSpan $1 $1) }
 
 
+TypedIdentList : '(' ident ':' Expr ')' TypedIdentList { ($2, $4) : $6 }
+               |                                       { [] }
+
+PipeConstrList : '|' ident ':' Expr PipeConstrList { ($2, $4) : $5 }
+               |                                   { [] }
 
 {
 parseError :: [Token] -> a

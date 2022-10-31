@@ -9,10 +9,10 @@ module Lily.Types (
     emptyEvalEnv,
 ) where
 
-import Lily.Prelude
-import Lily.Syntax
+import           Lily.Prelude
+import           Lily.Syntax
 
-import Lily.Config as Config
+import           Lily.Config  as Config
 
 data TypeError
     = ConversionError Span Value Value Value Value
@@ -29,8 +29,8 @@ data NamedHoleResult
     = OfType Span Name Value
 
 data TCEnv = TCEnv
-    { varTypes :: [Value]
-    , evalEnv :: EvalEnv
+    { varTypes     :: [Value]
+    , evalEnv      :: EvalEnv
     , currentLevel :: Lvl
     }
     deriving (Show)
@@ -134,6 +134,7 @@ infer env expr = do
 
             (rest', restTy) <- infer (addDefinition bodyValue bodyTy env) rest
             pure (CLet x ty' body' rest', restTy)
+        Inductive span name args constrs body -> undefined
         e@(App span fun arg) -> do
             (fun', funTy) <- infer env fun
             case funTy of
@@ -166,12 +167,11 @@ infer env expr = do
         -- Yes, TypeInType. Fight me
         Type _ -> pure (CType, VType)
 
-inferLet ::
-    (Error TypeError :> es, Writer (DList NamedHoleResult) :> es) =>
-    TCEnv ->
-    Maybe (SourceExpr Renamed) ->
-    SourceExpr Renamed ->
-    Eff es (CoreExpr, CoreExpr, Value)
+inferLet :: (Error TypeError :> es, Writer (DList NamedHoleResult) :> es) 
+         => TCEnv 
+         -> Maybe (SourceExpr Renamed) 
+         -> SourceExpr Renamed 
+         -> Eff es (CoreExpr, CoreExpr, Value)
 inferLet env mty body = case mty of
     Nothing -> do
         (body', bodyTy) <- infer env body
@@ -195,13 +195,15 @@ conversionCheck span level expected inferred = case (expected, inferred) of
         conversionCheck span level dom1 dom2
         -- We check that the codomains are equivalent by
         -- applying them to a 'free'(?) variable.
-        conversionCheck span
+        conversionCheck
+            span
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = x1})))
             (applyClosure clos2 (VVar (level{lvlName = x2})))
     (VLambda x1 clos1, VLambda x2 clos2) ->
         -- Same reasoning as Π types, except we don't have a domain to check.
-        conversionCheck span
+        conversionCheck
+            span
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = Just x1})))
             (applyClosure clos2 (VVar (level{lvlName = Just x2})))
@@ -210,7 +212,8 @@ conversionCheck span level expected inferred = case (expected, inferred) of
         -- (It's probably either free variable or another application involving free variables),
         -- So we do the same check as in the case above, but create a new `VApp` in the second case
         -- insetead of applying a closure (which we don't have yet!)
-        conversionCheck span
+        conversionCheck
+            span
             (incLevel level)
             (applyClosure clos1 (VVar (level{lvlName = Just x})))
             (VApp value (VVar level))
@@ -227,14 +230,14 @@ eval _ expr | False <- trace Config.Eval ("[eval]: " <> show expr) True = error 
 eval env (CVar ix) =
     let result = lookupValue env ix
      in trace Config.Eval ("[eval var]: " <> show ix <> " ==> " <> show result) result
-eval env (CPrim prim) = (VPrimClosure prim (primArgCount prim) [])
+eval _ (CPrim prim) = (VPrimClosure prim (primArgCount prim) [])
 eval env (CLet _ _ body rest) =
     eval (insertValue (eval env body) env) rest
 eval env (CApp e1 e2) = case (eval env e1, eval env e2) of
-    (VLambda _ clos, v2) -> applyClosure clos v2
+    (VLambda _ clos, v2)        -> applyClosure clos v2
     (VPrimClosure prim 1 vs, v) -> evalPrimOp prim (toList (vs <> [v]))
     (VPrimClosure prim n vs, v) -> VPrimClosure prim (n - 1) (vs <> [v])
-    (v1, v2) -> VApp v1 v2
+    (v1, v2)                    -> VApp v1 v2
 -- Evaluating a lambda drops its type signature.
 -- TODO: We could probably already drop the signature
 -- during evaluation. I don't think we need it in Core.
@@ -283,7 +286,7 @@ primOpType UnsafeCoerce =
                 )
 
 primArgCount :: PrimOp -> Int
-primArgCount UnsafeFix = 2
+primArgCount UnsafeFix    = 2
 primArgCount UnsafeCoerce = 4
 
 evalPrimOp :: PrimOp -> [Value] -> Value

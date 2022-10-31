@@ -1,3 +1,4 @@
+{-# LANGUAGE MagicHash #-}
 module Main (main) where
 
 import Lily.Prelude
@@ -15,6 +16,9 @@ import Lily.Types qualified as Types
 import Data.Set qualified as Set
 
 import System.Console.Terminal.Size as TermSize
+
+import GHC.Prim (reallyUnsafePtrEquality#)
+import GHC.Types (isTrue#)
 
 data Options = Options
     {
@@ -51,7 +55,7 @@ prettyTypeError (Types.ConversionError span expected actual fullExpected fullAct
           , "\ESC[1mwith actual type\ESC[0m"
           , "    \ESC[1m\ESC[31m" <> show actual <> "\ESC[0m"
           ]
-            <> if expected /= fullExpected || actual /= fullActual
+            <> if not (sameType expected fullExpected && sameType actual fullActual)
                 then
                     [ "while comparing types"
                     , "    \ESC[32m" <> show expected <> "\ESC[0m"
@@ -61,6 +65,14 @@ prettyTypeError (Types.ConversionError span expected actual fullExpected fullAct
                 else []
         )
 prettyTypeError err = show err -- TODO
+
+-- This should (hopefully!) work for the most part,
+-- but @reallyUnsafePtrEquality#@ might produce a false negative every now and then,
+-- so we should really figure out something more clever (or less clever, depending on your perspective :))! 
+-- Ideally, we would only include the original types in the ConversionError if they are actually relevant.
+sameType :: a -> a -> Bool
+sameType ty1 ty2 =
+    ty1 `seq` ty2 `seq` isTrue# (reallyUnsafePtrEquality# ty1 ty2)
 
 printHoles :: DList Types.NamedHoleResult -> IO ()
 printHoles holes = case toList holes of

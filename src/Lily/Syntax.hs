@@ -124,10 +124,13 @@ type family XPrimOp p where
     XPrimOp Parsed = Void
     XPrimOp Renamed = PrimOp
 
+type SourceTy p = SourceExpr p
+
 data SourceExpr (p :: Pass)
     = Var Span (XVar p) -- x
     | Prim Span (XPrimOp p)
-    | Let Span (XName p) (Maybe (SourceExpr p)) (SourceExpr p) (SourceExpr p) -- let x [: e₁] = e₂ in e₃
+    | Let Span (XName p) (Maybe (SourceTy p)) (SourceExpr p) (SourceExpr p) -- let x [: τ] = e₁ in e₂
+    | Inductive Span (XName p) [(XName p, SourceTy p)] [(XName p, SourceTy p)] (SourceExpr p) -- let inductive x (x : τ)* = [| x : τ]* in e
     | App Span (SourceExpr p) (SourceExpr p) -- e₁ e₂
     | Lambda Span (XName p) (Maybe (SourceExpr p)) (SourceExpr p) -- λx. e₂ | λ(x : e₁). e₂
     | Hole Span -- _
@@ -215,6 +218,9 @@ instance PrettyName Void where
 instance PrettyName PrimOp where
     prettyS x = S.shows x
 
+showTyped :: (PrettyName n, Show a) => (n, a) -> S.ShowS
+showTyped (x, ty) =  ("(" <>) . prettyS x . (" : " <>) . S.showsPrec piPrec ty
+
 instance (PrettyName (XVar p), PrettyName (XName p), PrettyName (XPrimOp p)) => S.Show (SourceExpr p) where
     showsPrec _ (Var _ x) = prettyS x
     showsPrec _ (Prim _ p) = prettyS p
@@ -223,6 +229,12 @@ instance (PrettyName (XVar p), PrettyName (XName p), PrettyName (XPrimOp p)) => 
             ("let " <>) . prettyS x . (" = " <>) . S.showsPrec appPrec body
                 <> ("in\n" <>)
                     . S.showsPrec letPrec rest
+    showsPrec p (Inductive _ x args [] exp) =
+        par p letPrec $  ("let inductive " <>) . prettyS x . (foldMap (((" "<>) .) . showTyped) args)  . (" in " <>) . (S.showsPrec letPrec exp)
+    showsPrec p (Inductive _ x args constrs exp) =
+        par p letPrec $  ("let inductive " <>) . prettyS x . (foldMap (((" "<>) .) . showTyped) args) . (" = " <>)
+            . foldMap (\(con, ty) -> ("    | " <>) . prettyS con . (" : "<>) . S.showsPrec letPrec ty . ("\n" <>)) constrs
+            . (" in\n" <>) . (S.showsPrec letPrec exp)
     showsPrec p (Let _ x (Just ty) body rest) =
         par p letPrec $
             ("let " <>) . prettyS x . (" : " <>) . S.showsPrec piPrec ty
@@ -273,7 +285,7 @@ instance Show CoreExpr where
 
 instance Show Value where
     showsPrec _ (VVar lvl) = S.shows lvl
-    showsPrec p (VPrimClosure prim _ []) = S.shows prim
+    showsPrec _ (VPrimClosure prim _ []) = S.shows prim
     showsPrec p (VPrimClosure prim _ args) =
         par p appPrec $ S.shows prim . (foldMap (\x -> (" " <>) . S.showsPrec atomPrec x) args)
     showsPrec p (VApp v1 v2) =
@@ -312,6 +324,7 @@ instance Spanned (SourceExpr p) where
         Var span _ -> span
         Prim span _ -> span
         Let span _ _ _ _ -> span
+        Inductive span _ _ _ _ -> span
         App span _ _ -> span
         Lambda span _ _ _ -> span
         Hole span -> span
